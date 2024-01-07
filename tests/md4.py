@@ -1,6 +1,8 @@
-##################################################################################
+#######################################################
 # Testing example
-##################################################################################
+#######################################################
+
+# Note: above comment is added to the C file but this one not
 import sys
 sys.path.append('src/')
 from simd_function import *
@@ -9,9 +11,11 @@ state = VectorMemoryArray(uint32_t, 4)  # the state
 block = VectorMemoryArray(uint32_t, 16) # The message
 SQRT_2 = 0x5a827999
 SQRT_3 = 0x6ed9eba1
+
+# Note: Below comment is added to C file before the function definition
     
 # This is md4 crypto function
-# other line here
+# other comment line here
 with Function(void)(state, block) as md4_block:
     
     a = state[0]
@@ -25,7 +29,7 @@ with Function(void)(state, block) as md4_block:
     c += (b ^ (d & (a ^ b))) + block[2] ; c = ROTATE(c, 11);
     b += (a ^ (c & (d ^ a))) + block[3] ; b = ROTATE(b, 19);
 
-    a += (d ^ (b & (c ^ d))) + block[4] ; a = ROTATE(a, 3 );#pepe
+    a += (d ^ (b & (c ^ d))) + block[4] ; a = ROTATE(a, 3 );# Comment at end of line
     d += (c ^ (a & (b ^ c))) + block[5] ; d = ROTATE(d, 7 );
     c += (b ^ (d & (a ^ b))) + block[6] ; c = ROTATE(c, 11);
     b += (a ^ (c & (d ^ a))) + block[7] ; b = ROTATE(b, 19);
