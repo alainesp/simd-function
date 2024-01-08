@@ -6,7 +6,7 @@
 
 from dataclasses import dataclass
 from inspect import stack
-from atexit import register as register_at_exit
+# from atexit import register as register_at_exit
 from enum import Enum
 import operator
 
@@ -33,15 +33,17 @@ from ctypes import c_double as double
 # Utils
 ##################################################################################
 def get_function_definition_filename() -> str:
+    """Get the name of the Python file"""
     return [s.filename for s in stack() if s.filename != __file__][0]
 
 @dataclass
-class comment:
+class Comment:
     line: int
     comment: str
 
-def get_comments() -> list[comment]:
-    comments: list[comment] = []
+def get_comments() -> list[Comment]:
+    """Get the comments from the Python file"""
+    comments: list[Comment] = []
     
     with open(get_function_definition_filename(), 'r') as f:
         line_number = 1
@@ -51,10 +53,10 @@ def get_comments() -> list[comment]:
             
             comment_begin = line.find('#')
             if comment_begin >= 0:
-                comments.append(comment(line_number, line[comment_begin:].replace('#', '//')))
+                comments.append(Comment(line_number, line[comment_begin:].replace('#', '//')))
             line_number += 1
        
-    comments.append(comment(1_000_000_000, '// end of file'))     
+    comments.append(Comment(1_000_000_000, '// end of file'))     
     return comments
     
 def get_line_number() -> int:
@@ -78,14 +80,14 @@ def retrieve_name(var) -> str:
 ##################################################################################
 # Targets
 ##################################################################################
-class SIMDTarget(Enum):
+class Target(Enum):
     PLAIN_C           = 1
-    SSE2_INTRINSICS   = 2
-    AVX_INTRINSICS    = 3
-    AVX2_INTRINSICS   = 4
+    # SSE2_INTRINSICS   = 2
+    # AVX_INTRINSICS    = 3
+    # AVX2_INTRINSICS   = 4
     # AVX512_INTRINSICS = 5
 
-default_targets: list[SIMDTarget] = [SIMDTarget.PLAIN_C]#, SIMDTarget.SSE2_INTRINSICS, SIMDTarget.AVX2_INTRINSICS]
+default_targets: list[Target] = [Target.PLAIN_C]
 
 ##################################################################################
 # Instructions
@@ -95,10 +97,10 @@ class Instruction:
     result: any
     line_number: int
     
-    def generate_code(self, target: SIMDTarget, instruction_by_tmp: dict[any, any]):
+    def generate_code(self, target: Target, instruction_by_tmp: dict[any, any]):
         raise NotImplementedError
 
-def get_expresion(tmp: any, target: SIMDTarget, instruction_by_tmp: dict[any, Instruction]) -> str:
+def get_expresion(tmp: any, target: Target, instruction_by_tmp: dict[any, Instruction]) -> str:
     if isinstance(tmp, int):
         return f'{hex(tmp) if tmp >= 255 else tmp}'
     if tmp.is_constant:
@@ -117,10 +119,10 @@ class LoadInstruction(Instruction):
         self.memory = memory
         self.index = index
     
-    def generate_code(self, target: SIMDTarget, instruction_by_tmp: dict[any, Instruction]):
+    def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
         memory_expression = f'{self.memory.name}[{self.index}]'
         match target:
-            case SIMDTarget.PLAIN_C:
+            case Target.PLAIN_C:
                 if self.result.is_tmp():
                     return memory_expression
                 else:
@@ -138,10 +140,10 @@ class StoreInstruction(Instruction):
         self.index = index
         self.operand = operand
     
-    def generate_code(self, target: SIMDTarget, instruction_by_tmp: dict[any, Instruction]):
+    def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
         memory_expression = f'{self.memory.name}[{self.index}]'
         match target:
-            case SIMDTarget.PLAIN_C:
+            case Target.PLAIN_C:
                 return f'{memory_expression} = {get_expresion(self.operand, target, instruction_by_tmp)};'
             case _: raise NotImplementedError
     
@@ -157,13 +159,13 @@ class BinaryInstruction(Instruction):
         self.operand1 = operand1
         self.operand2 = operand2
         
-    def get_expresions(self, target: SIMDTarget, instruction_by_tmp: dict[any, Instruction]) -> (str, str):
+    def get_expresions(self, target: Target, instruction_by_tmp: dict[any, Instruction]) -> (str, str):
         return (get_expresion(self.operand1, target, instruction_by_tmp), get_expresion(self.operand2, target, instruction_by_tmp))
     
-    def generate_code(self, target: SIMDTarget, instruction_by_tmp: dict[any, Instruction]):
+    def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
         operand1_expression, operand2_expression = self.get_expresions(target, instruction_by_tmp)
         match target:
-            case SIMDTarget.PLAIN_C:
+            case Target.PLAIN_C:
                 if self.result.is_tmp():
                     return f'{"(" if self.c_use_parenthesis else ""}{operand1_expression} {self.c_operator} {operand2_expression}{")" if self.c_use_parenthesis else ""}'
                 else:
@@ -176,11 +178,11 @@ class BinaryInstruction(Instruction):
             case _: raise NotImplementedError
 
 class CallInstruction(BinaryInstruction):
-    def generate_code(self, target: SIMDTarget, instruction_by_tmp: dict[any, Instruction]):
+    def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
         operand1_expression, operand2_expression = self.get_expresions(target, instruction_by_tmp)
         call_result = f'{self.c_operator}({operand1_expression}, {operand2_expression})'
         match target:
-            case SIMDTarget.PLAIN_C:
+            case Target.PLAIN_C:
                 if self.result.is_tmp():
                     return call_result
                 else:
@@ -210,7 +212,7 @@ class XorInstruction(BinaryInstruction):
         
 # Shift/Rotations
 class RotlInstruction(CallInstruction):
-    def generate_code(self, target: SIMDTarget, instruction_by_tmp: dict[any, Instruction]):
+    def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
         if self.operand1.c_type == uint32_t:
             self.c_operator = '_rotl'
         elif self.operand1.c_type == uint64_t:
@@ -222,9 +224,9 @@ class RotlInstruction(CallInstruction):
 ##################################################################################
 # SIMD function
 ##################################################################################
-def get_type(var: any, target: SIMDTarget):
+def get_type(var: any, target: Target):
     match target:
-        case SIMDTarget.PLAIN_C: return retrieve_name(var.c_type)
+        case Target.PLAIN_C: return retrieve_name(var.c_type)
         case _: raise NotImplementedError
 
 class Param:
@@ -240,9 +242,9 @@ class Function:
     name: str
     params: list[Param]
     instructions: list[Instruction]
-    targets: list[SIMDTarget]
+    targets: list[Target]
     
-    def __init__(self, result_type: ctype = void, targets: list[SIMDTarget] = default_targets):
+    def __init__(self, result_type: ctype = void, targets: list[Target] = default_targets):
         self.result_type = result_type
         self.params = []
         self.instructions = []
@@ -271,10 +273,10 @@ class Function:
     def get_includes(self, includes: set):
         for target in self.targets:
             match target:
-                case SIMDTarget.PLAIN_C: includes.add('stdint.h')
+                case Target.PLAIN_C: includes.add('stdint.h')
                 case _: raise NotImplementedError
     
-    def generate_code(self, output, comments: list[comment]):
+    def generate_code(self, output, comments: list[Comment]):
         # Generate code for all targets
         for target in self.targets:
             # Function signature
@@ -332,7 +334,7 @@ def generate_code(filename: str):
     for func in defined_functions:
         func.get_includes(includes)
     
-    comments: list[comment] = get_comments()
+    comments: list[Comment] = get_comments()
     
     with open(filename, 'w') as output:
         # Save comments

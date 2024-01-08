@@ -3,8 +3,8 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Automatically generated code by SIMD-function library
 
-#include <assert.h>
 #include <stdint.h>
+#include <assert.h>
 
 // This is md4 crypto function
 // other comment line here
