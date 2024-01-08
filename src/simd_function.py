@@ -309,6 +309,8 @@ class Function:
                         comment_index += 1
                         
                     # Write line spaces
+                    if current_line > instruction.line_number: # Support cycles in Python
+                        current_line = instruction.line_number - 1
                     output.write('\n'*(instruction.line_number - current_line))
                     current_line = instruction.line_number
                     # Instruction
