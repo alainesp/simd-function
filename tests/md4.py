@@ -25,24 +25,24 @@ with Function(void)(state, block) as md4_block:
 
     # Round 1
     for i in range(0, 16, 4):
-        a += (d ^ (b & (c ^ d))) + block[i+0] ; a = ROTATE(a, 3);# Comment at end of line
-        d += (c ^ (a & (b ^ c))) + block[i+1] ; d = ROTATE(d, 7);
-        c += (b ^ (d & (a ^ b))) + block[i+2] ; c = ROTATE(c, 11);
-        b += (a ^ (c & (d ^ a))) + block[i+3] ; b = ROTATE(b, 19);
+        a += (d ^ (b & (c ^ d))) + block[i+0] ; a = rotl(a, 3);# Comment at end of line
+        d += (c ^ (a & (b ^ c))) + block[i+1] ; d = rotl(d, 7);
+        c += (b ^ (d & (a ^ b))) + block[i+2] ; c = rotl(c, 11);
+        b += (a ^ (c & (d ^ a))) + block[i+3] ; b = rotl(b, 19);
 
     # Round 2
     for i in range(0, 4):
-        a += ((b & (c | d)) | (c & d)) + block[i+0] + SQRT_2; a = ROTATE(a, 3 );
-        d += ((a & (b | c)) | (b & c)) + block[i+4] + SQRT_2; d = ROTATE(d, 5 );
-        c += ((d & (a | b)) | (a & b)) + block[i+8] + SQRT_2; c = ROTATE(c, 9 );
-        b += ((c & (d | a)) | (d & a)) + block[i+12]+ SQRT_2; b = ROTATE(b, 13);
+        a += ((b & (c | d)) | (c & d)) + block[i+0] + SQRT_2; a = rotl(a, 3 );
+        d += ((a & (b | c)) | (b & c)) + block[i+4] + SQRT_2; d = rotl(d, 5 );
+        c += ((d & (a | b)) | (a & b)) + block[i+8] + SQRT_2; c = rotl(c, 9 );
+        b += ((c & (d | a)) | (d & a)) + block[i+12]+ SQRT_2; b = rotl(b, 13);
 
     # Round 3 
     for i in [0, 2, 1, 3]:
-        a += (d ^ c ^ b) + block[i+0]  + SQRT_3; a = ROTATE(a, 3 );
-        d += (c ^ b ^ a) + block[i+8]  + SQRT_3; d = ROTATE(d, 9 );
-        c += (b ^ a ^ d) + block[i+4]  + SQRT_3; c = ROTATE(c, 11);
-        b += (a ^ d ^ c) + block[i+12] + SQRT_3; b = ROTATE(b, 15);
+        a += (d ^ c ^ b) + block[i+0]  + SQRT_3; a = rotl(a, 3 );
+        d += (c ^ b ^ a) + block[i+8]  + SQRT_3; d = rotl(d, 9 );
+        c += (b ^ a ^ d) + block[i+4]  + SQRT_3; c = rotl(c, 11);
+        b += (a ^ d ^ c) + block[i+12] + SQRT_3; b = rotl(b, 15);
 
     state[0] += a;
     state[1] += b;
@@ -50,4 +50,4 @@ with Function(void)(state, block) as md4_block:
     state[3] += d;
     
     
-generate_code('tests/md4_plain_c.c')
+generate_code('tests/md4_block.c')

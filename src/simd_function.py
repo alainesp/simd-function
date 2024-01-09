@@ -82,16 +82,18 @@ def retrieve_name(var) -> str:
 ##################################################################################
 class Target(Enum):
     PLAIN_C           = 1
-    # SSE2_INTRINSICS   = 2
-    # AVX_INTRINSICS    = 3
-    # AVX2_INTRINSICS   = 4
+    SSE2_INTRINSICS   = 2
+    AVX_INTRINSICS    = 3
+    AVX2_INTRINSICS   = 4
     # AVX512_INTRINSICS = 5
 
-default_targets: list[Target] = [Target.PLAIN_C]
+default_targets: list[Target] = [Target.PLAIN_C, Target.SSE2_INTRINSICS, Target.AVX2_INTRINSICS]
 
 ##################################################################################
 # Instructions
 ##################################################################################
+from _ctypes import sizeof
+
 @dataclass
 class Instruction:
     result: any
@@ -110,6 +112,21 @@ def get_expresion(tmp: any, target: Target, instruction_by_tmp: dict[any, Instru
     
     return instruction_by_tmp[tmp].generate_code(target, instruction_by_tmp)
 
+def get_vector_ins_suffix(target: Target, c_type: ctype) -> str:
+    if ctype == float: return 'ps'
+    if ctype == double: return 'pd'
+    
+    if target == Target.SSE2_INTRINSICS: return 'si128'
+    if target == Target.AVX2_INTRINSICS: return 'si256'
+    raise NotImplementedError
+def get_vector_ins_sizeof(prefix: str, c_type: ctype):
+    if c_type == float: return f'{prefix}ps'
+    if c_type == double: return f'{prefix}pd'
+    
+    return f'{prefix}epi{sizeof(c_type) * 8}'
+def is_float_type(c_type: ctype):
+    return c_type == float or c_type == double
+
 class LoadInstruction(Instruction):
     memory: any
     index: any # Should support any index (constant, scalar, ...)
@@ -120,14 +137,20 @@ class LoadInstruction(Instruction):
         self.index = index
     
     def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
-        memory_expression = f'{self.memory.name}[{self.index}]'
-        match target:
-            case Target.PLAIN_C:
-                if self.result.is_tmp():
-                    return memory_expression
-                else:
-                    return f'{self.result.name} = {memory_expression};'
-            case _: raise NotImplementedError
+        if target == Target.PLAIN_C or isinstance(self.memory, ScalarMemoryArray):
+            memory_expression = f'{self.memory.name}[{self.index}]'
+            if self.result.is_tmp():
+                return memory_expression
+            else:
+                return f'{self.result.name} = {memory_expression};'
+        # Load data instruction
+        aligment_str = '' if self.memory.alignment >= 16 else 'u'
+        # Expresion
+        memory_expression = f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_load{aligment_str}_{get_vector_ins_suffix(target, self.memory.c_type)}({self.memory.name} + {self.index})'
+        if self.result.is_tmp():
+            return memory_expression
+        else:
+            return f'{self.result.name} = {memory_expression};'
         
 class StoreInstruction(Instruction):
     memory: any
@@ -141,11 +164,14 @@ class StoreInstruction(Instruction):
         self.operand = operand
     
     def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
-        memory_expression = f'{self.memory.name}[{self.index}]'
-        match target:
-            case Target.PLAIN_C:
-                return f'{memory_expression} = {get_expresion(self.operand, target, instruction_by_tmp)};'
-            case _: raise NotImplementedError
+        if target == Target.PLAIN_C or isinstance(self.memory, ScalarMemoryArray):
+            memory_expression = f'{self.memory.name}[{self.index}]'
+            return f'{memory_expression} = {get_expresion(self.operand, target, instruction_by_tmp)};'
+        
+        # Load data instruction
+        aligment_str = '' if self.memory.alignment >= 16 else 'u'
+        # Expresion
+        return f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_store{aligment_str}_{get_vector_ins_suffix(target, self.memory.c_type)}({self.memory.name} + {self.index}, {get_expresion(self.operand, target, instruction_by_tmp)});'
  
 class UnaryInstruction(Instruction):
     operand: any
@@ -176,6 +202,7 @@ class BinaryInstruction(Instruction):
     operand1: any
     operand2: any
     c_operator: str
+    need_vector_operands: bool = False
     
     def __init__(self, result, operand1, operand2, c_operator: str = '') -> None:
         super().__init__(result, get_line_number())
@@ -188,42 +215,46 @@ class BinaryInstruction(Instruction):
     
     def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
         operand1_expression, operand2_expression = self.get_expresions(target, instruction_by_tmp)
-        match target:
-            case Target.PLAIN_C:
-                if self.result.is_tmp():
-                    return f'({operand1_expression} {self.c_operator} {operand2_expression})'
+        if self.c_operator and (target == Target.PLAIN_C or (isinstance(self.operand1, Scalar) and (isinstance(self.operand2, Scalar) or isinstance(self.operand2, int)))):
+            if self.result.is_tmp():
+                return f'({operand1_expression} {self.c_operator} {operand2_expression})'
+            else:
+                if self.result.name == operand1_expression:
+                    return f'{self.result.name} {self.c_operator}= {operand2_expression};'
+                elif self.result.name == operand2_expression:
+                    return f'{self.result.name} {self.c_operator}= {operand1_expression};'
                 else:
-                    if self.result.name == operand1_expression:
-                        return f'{self.result.name} {self.c_operator}= {operand2_expression};'
-                    elif self.result.name == operand2_expression:
-                        return f'{self.result.name} {self.c_operator}= {operand1_expression};'
-                    else:
-                        return f'{self.result.name} = {operand1_expression} {self.c_operator} {operand2_expression};'
-            case _: raise NotImplementedError
-
-class CallInstruction(BinaryInstruction):
-    def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
-        operand1_expression, operand2_expression = self.get_expresions(target, instruction_by_tmp)
-        call_result = f'{self.c_operator}({operand1_expression}, {operand2_expression})'
-        match target:
-            case Target.PLAIN_C:
-                if self.result.is_tmp():
-                    return call_result
-                else:
-                    return f'{self.result.name} = {call_result};'
-            case _: raise NotImplementedError
+                    return f'{self.result.name} = {operand1_expression} {self.c_operator} {operand2_expression};'
+                
+        # Vectorization
+        if self.need_vector_operands and not isinstance(self.operand2, Vector):
+            operand2_expression = f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_set1_{get_vector_ins_sizeof('', self.operand1.c_type)}({operand2_expression})'
+            
+        call_result = f'{self.get_call(target)}({operand1_expression}, {operand2_expression})'
+        if self.result.is_tmp():
+            return call_result
+        else:
+            return f'{self.result.name} = {call_result};'
             
 # Aritmetic      
 class AddInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
         super().__init__(result, operand1, operand2, '+')
+        self.need_vector_operands = True
+    def get_call(self, target: Target) -> str:
+        return f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_{get_vector_ins_sizeof('add_', self.operand1.c_type)}'
 class SubInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
         super().__init__(result, operand1, operand2, '-')
+        self.need_vector_operands = True
+    def get_call(self, target: Target) -> str:
+        return f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_{get_vector_ins_sizeof('sub_', self.operand1.c_type)}'
         
 class ProductInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
         super().__init__(result, operand1, operand2, '*')
+    def get_call(self, target: Target) -> str:
+        return f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_{get_vector_ins_sizeof('mul_', self.operand1.c_type)}'
 class DivisionInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
         super().__init__(result, operand1, operand2, '/')
@@ -238,29 +269,75 @@ class ModuloInstruction(BinaryInstruction):
 class AndInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
         super().__init__(result, operand1, operand2, '&')
+        self.need_vector_operands = True
+    def get_call(self, target: Target):
+        return f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_and_{get_vector_ins_suffix(target, self.operand1.c_type)}'
 class OrInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
         super().__init__(result, operand1, operand2, '|')
+        self.need_vector_operands = True
+    def get_call(self, target: Target) -> str:
+        return f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_or_{get_vector_ins_suffix(target, self.operand1.c_type)}'
 class XorInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
         super().__init__(result, operand1, operand2, '^')
+        self.need_vector_operands = True
+    def get_call(self, target: Target) -> str:
+        return f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_xor_{get_vector_ins_suffix(target, self.operand1.c_type)}'
         
 # Shift/Rotations
 class ShiftLInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
         super().__init__(result, operand1, operand2, '<<')
+    def get_call(self, target: Target) -> str:
+        if isinstance(self.operand2, int) or isinstance(self.operand2, Scalar):
+            return f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_{get_vector_ins_sizeof('slli_', self.operand1.c_type)}'
+        if isinstance(self.operand2, Vector):
+            return f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_{get_vector_ins_sizeof('sll_', self.operand1.c_type)}'
+        raise TypeError
 class ShiftRInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
         super().__init__(result, operand1, operand2, '>>')
-class RotlInstruction(CallInstruction):
-    def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
-        if self.operand1.c_type == uint32_t:
-            self.c_operator = '_rotl'
-        elif self.operand1.c_type == uint64_t:
-            self.c_operator = '_rotl64'
-        else:
-            raise NotImplementedError
-        return super().generate_code(target, instruction_by_tmp)
+    def get_call(self, target: Target) -> str:
+        if isinstance(self.operand2, int) or isinstance(self.operand2, Scalar):
+            return f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_{get_vector_ins_sizeof('srli_', self.operand1.c_type)}'
+        if isinstance(self.operand2, Vector):
+            return f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_{get_vector_ins_sizeof('srl_', self.operand1.c_type)}'
+        raise TypeError
+class RotlInstruction(BinaryInstruction):
+    def get_call(self, target: Target) -> str:
+        if target == Target.PLAIN_C or isinstance(self.operand1, Scalar):
+            if self.operand1.c_type == uint8_t: return 'rotl8'
+            elif self.operand1.c_type == uint16_t: return 'rotl16'
+            elif self.operand1.c_type == uint32_t: return 'rotl32'
+            elif self.operand1.c_type == uint64_t: return 'rotl64'
+        if target == Target.SSE2_INTRINSICS:
+            if self.operand1.c_type == uint16_t: return 'sse2_rotl_u16'
+            if self.operand1.c_type == uint32_t: return 'sse2_rotl_u32'
+            if self.operand1.c_type == uint64_t: return 'sse2_rotl_u64'
+        if target == Target.AVX2_INTRINSICS:
+            if self.operand1.c_type == uint16_t: return 'avx2_rotl_u16'
+            if self.operand1.c_type == uint32_t: return 'avx2_rotl_u32'
+            if self.operand1.c_type == uint64_t: return 'avx2_rotl_u64'
+            
+        raise NotImplementedError
+            
+    def used_macros(self, target: Target) -> str:
+        if target == Target.PLAIN_C or isinstance(self.operand1, Scalar):
+            if self.operand1.c_type == uint8_t:    return '#define rotl8(v, s) (((v) << (s)) | ((v) >> 8-(s)))\n'
+            elif self.operand1.c_type == uint16_t: return '#define rotl16(v, s) (((v) << (s)) | ((v) >> 16-(s)))\n'
+            elif self.operand1.c_type == uint32_t: return '#define rotl32(v, s) _rotl(v, s)\n'
+            elif self.operand1.c_type == uint64_t: return '#define rotl64(v, s) _rotl64(v, s)\n'
+            
+        if target == Target.SSE2_INTRINSICS:
+            if self.operand1.c_type == uint16_t: return '#define sse2_rotl_u16(v, s) _mm_or_si128(_mm_slli_epi16(v, s), _mm_srli_epi16(v, 16-(s)))\n'
+            if self.operand1.c_type == uint32_t: return '#define sse2_rotl_u32(v, s) _mm_or_si128(_mm_slli_epi32(v, s), _mm_srli_epi32(v, 32-(s)))\n'
+            if self.operand1.c_type == uint64_t: return '#define sse2_rotl_u64(v, s) _mm_or_si128(_mm_slli_epi64(v, s), _mm_srli_epi64(v, 64-(s)))\n'
+
+        if target == Target.AVX2_INTRINSICS:
+            if self.operand1.c_type == uint16_t: return '#define avx2_rotl_u16(v, s) _mm256_or_si256(_mm256_slli_epi16(v, s), _mm256_srli_epi16(v, 16-(s)))\n'
+            if self.operand1.c_type == uint32_t: return '#define avx2_rotl_u32(v, s) _mm256_or_si256(_mm256_slli_epi32(v, s), _mm256_srli_epi32(v, 32-(s)))\n'
+            if self.operand1.c_type == uint64_t: return '#define avx2_rotl_u64(v, s) _mm256_or_si256(_mm256_slli_epi64(v, s), _mm256_srli_epi64(v, 64-(s)))\n'    
 
 ##################################################################################
 # SIMD function
@@ -270,9 +347,13 @@ def get_type(var: any, target: Target) -> str:
     if isinstance(var, Vector) or isinstance(var, VectorMemoryArray): 
         match target:
             case Target.PLAIN_C: return retrieve_name(var.c_type)
+            case Target.SSE2_INTRINSICS:
+                return '__m128' if var.c_type == float else ('__m128d' if var.c_type == double else '__m128i')
+            case Target.AVX2_INTRINSICS:
+                return '__m256' if var.c_type == float else ('__m256d' if var.c_type == double else '__m256i')
             case _: raise NotImplementedError
             
-    if isinstance(var, Scalar):
+    if isinstance(var, Scalar) or isinstance(var, ScalarMemoryArray):
         return retrieve_name(var.c_type)
     
     if var is None:
@@ -323,17 +404,20 @@ class Function:
         if not self.name or self.name == 'self':
             raise NameError('Please provide a name for the function')
     
-    def get_includes(self, includes: set):
+    def get_includes(self, includes: set[str]):
         for target in self.targets:
             match target:
                 case Target.PLAIN_C: includes.add('stdint.h')
+                case Target.SSE2_INTRINSICS: includes.add('emmintrin.h')
+                case Target.AVX_INTRINSICS: includes.add('immintrin.h')
+                case Target.AVX2_INTRINSICS: includes.add('immintrin.h')
                 case _: raise NotImplementedError
     
     def generate_code(self, output, comments: list[Comment]):
         # Generate code for all targets
         for target in self.targets:
             # Function signature
-            output.write(f'{get_type(self.result_type, target)} {self.name}(')
+            output.write(f'{get_type(self.result_type, target)} {self.name}_{target.name}(')
             param_separator: str = ''
             for arg in self.params:
                 param_suffix = f'[{arg.obj.num_elems}]' if isinstance(arg.obj, VectorMemoryArray) and arg.obj.num_elems > 0 else ''
@@ -413,6 +497,17 @@ def generate_code(filename: str):
         output.write('// Automatically generated code by SIMD-function library\n\n')
         
         output.writelines([f'#include <{include}>\n' for include in includes])
+        output.write('\n')
+        
+        # Get macros needed
+        macros = set()
+        for func in defined_functions:
+            for instruction in func.instructions:
+                if hasattr(instruction, 'used_macros'):
+                    for t in func.targets:
+                        macros.add(instruction.used_macros(t))
+        # Write the macros
+        output.writelines(macros)
         output.write('\n')
         
         for func in defined_functions:
@@ -524,10 +619,8 @@ class Variable:
          return self._binary_op(other, operator.__rshift__, ShiftRInstruction)
     def __lshift__(self, other):
          return self._binary_op(other, operator.__lshift__, ShiftLInstruction)
-    def rotate_left(self, other):
-        global ror_width
-        ror_width = sizeof(self.c_type) * 8
-        return self._binary_op(other, rotl, RotlInstruction)
+    def rotl(self, other):
+        return self._binary_op(other, raise_exception, RotlInstruction)
     
     # Logical
     def __and__(self, other):
@@ -579,20 +672,28 @@ class Scalar(Variable):
     pass
         
 # TODO: 
-from _ctypes import sizeof
-ror_width = 32
-def rotl(n, shift):
+def raise_exception(op1, op2):
+    raise NotImplementedError
+    
+def rotl_constant(n, shift, ror_width: int):
     mask: int = 2**ror_width-1
     return (mask & (n << shift)) | (mask & (n >> (ror_width-shift)))
-def ROTATE(op1: Vector, op2):
-    # TODO: Handle constants here
-    return op1.rotate_left(op2)
+def rotl(op1: int | Scalar | Vector, op2: int | Scalar | Vector) -> int | Scalar | Vector:
+    if isinstance(op1, int) and isinstance(op2, int):
+        return rotl_constant(op1, op2, 32)
+    if (isinstance(op1, Scalar) or isinstance(op1, Vector)) and op1.is_constant and isinstance(op2, int):
+        return rotl_constant(op1.constant_value, op2, sizeof(op1.c_type)*8)
+    if isinstance(op1, int) and (isinstance(op2, Scalar) or isinstance(op2, Vector)) and op2.is_constant:
+        return rotl_constant(op1, op2.constant_value, sizeof(op2.c_type)*8)
+    if (isinstance(op1, Scalar) or isinstance(op1, Vector)) and op1.is_constant and (isinstance(op2, Scalar) or isinstance(op2, Vector)) and op2.is_constant:
+        return rotl_constant(op1.constant_value, op2.constant_value, sizeof(op1.c_type)*8)
+    
+    return op1.rotl(op2)
     
 @dataclass
-class VectorMemoryArray:
+class MemoryArray:
     c_type: ctype
     num_elems: int
-    alignment: int = 0
     name: str = ''
     
     def checks(self, index):
@@ -612,15 +713,25 @@ class VectorMemoryArray:
         self.checks(index)      
         self.find_name()
         
-        result = Vector(self.c_type, is_uninitialize=False)
+        if isinstance(self, VectorMemoryArray):
+            result = Vector(self.c_type, is_uninitialize=False)
+        elif isinstance(self, ScalarMemoryArray):
+            result = Scalar(self.c_type, is_uninitialize=False)
+        else:
+            raise TypeError
         defined_functions[-1].instructions.append(LoadInstruction(result, memory=self, index=index))
         return result
     
     def __setitem__(self, index, value):
         self.checks(index)
         self.find_name()
-        if isinstance(value, Vector):
+        if isinstance(value, Vector) or isinstance(value, Scalar):
             value.find_name()
         
         assert value.c_type == self.c_type
         defined_functions[-1].instructions.append(StoreInstruction(operand=value, memory=self, index=index))
+        
+class VectorMemoryArray(MemoryArray):
+    alignment: int = 64
+class ScalarMemoryArray(MemoryArray):
+    pass

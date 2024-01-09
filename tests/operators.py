@@ -23,12 +23,12 @@ with Function(Vector(uint32_t))(op1, op2) as prod:
     prod.Return(op1 * op2)
     
 # Division operator
-with Function(Vector(uint32_t))(op1, op2) as div:
-    div.Return(op1 / op2)
-with Function(Vector(uint32_t))(op1, op2) as div1:
-    div1.Return(op1 // op2)
-with Function(Vector(uint32_t))(op1, op2) as mod:
-    mod.Return(op1 % op2)
+# with Function(Vector(uint32_t))(op1, op2) as div:
+#     div.Return(op1 / op2)
+# with Function(Vector(uint32_t))(op1, op2) as div1:
+#     div1.Return(op1 // op2)
+# with Function(Vector(uint32_t))(op1, op2) as mod:
+#     mod.Return(op1 % op2)
    
 # Power operator 
 with Function(Vector(uint32_t))(op1) as pow:
@@ -41,4 +41,4 @@ with Function(Vector(uint32_t))(op1, op2_scalar) as shiftl:
 with Function(Vector(uint32_t))(op1, op2_scalar) as shiftr:
     shiftr.Return(op1 >> op2_scalar)
     
-generate_code('tests/operators_plain_c.c')
+generate_code('tests/operators.c')
