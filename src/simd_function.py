@@ -146,18 +146,42 @@ class StoreInstruction(Instruction):
             case Target.PLAIN_C:
                 return f'{memory_expression} = {get_expresion(self.operand, target, instruction_by_tmp)};'
             case _: raise NotImplementedError
+ 
+class UnaryInstruction(Instruction):
+    operand: any
+    c_operator: str
     
+    def __init__(self, result, operand, c_operator: str) -> None:
+        super().__init__(result, get_line_number())
+        self.operand = operand
+        self.c_operator = c_operator
+        
+    def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
+        operand_expression = f'{self.c_operator}({get_expresion(self.operand, target, instruction_by_tmp)})'
+        match target:
+            case Target.PLAIN_C:
+                if self.result.is_tmp():
+                    return operand_expression
+                else:
+                    return f'{self.result.name} = {operand_expression};'
+            case _: raise NotImplementedError
+            
+class ReturnInstruction(UnaryInstruction):
+    def __init__(self, operand) -> None:
+        super().__init__(None, operand, '')
+    def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
+        return f'return {get_expresion(self.operand, target, instruction_by_tmp)};'
     
 class BinaryInstruction(Instruction):
     operand1: any
     operand2: any
     c_operator: str
-    c_use_parenthesis: bool = True
     
-    def __init__(self, result, operand1, operand2) -> None:
+    def __init__(self, result, operand1, operand2, c_operator: str = '') -> None:
         super().__init__(result, get_line_number())
         self.operand1 = operand1
         self.operand2 = operand2
+        self.c_operator = c_operator
         
     def get_expresions(self, target: Target, instruction_by_tmp: dict[any, Instruction]) -> (str, str):
         return (get_expresion(self.operand1, target, instruction_by_tmp), get_expresion(self.operand2, target, instruction_by_tmp))
@@ -167,7 +191,7 @@ class BinaryInstruction(Instruction):
         match target:
             case Target.PLAIN_C:
                 if self.result.is_tmp():
-                    return f'{"(" if self.c_use_parenthesis else ""}{operand1_expression} {self.c_operator} {operand2_expression}{")" if self.c_use_parenthesis else ""}'
+                    return f'({operand1_expression} {self.c_operator} {operand2_expression})'
                 else:
                     if self.result.name == operand1_expression:
                         return f'{self.result.name} {self.c_operator}= {operand2_expression};'
@@ -192,25 +216,42 @@ class CallInstruction(BinaryInstruction):
 # Aritmetic      
 class AddInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
-        super().__init__(result, operand1, operand2)
-        self.c_operator = '+'
-        self.c_use_parenthesis = False
+        super().__init__(result, operand1, operand2, '+')
+class SubInstruction(BinaryInstruction):
+    def __init__(self, result, operand1, operand2) -> None:
+        super().__init__(result, operand1, operand2, '-')
+        
+class ProductInstruction(BinaryInstruction):
+    def __init__(self, result, operand1, operand2) -> None:
+        super().__init__(result, operand1, operand2, '*')
+class DivisionInstruction(BinaryInstruction):
+    def __init__(self, result, operand1, operand2) -> None:
+        super().__init__(result, operand1, operand2, '/')
+class ModuloInstruction(BinaryInstruction):
+    def __init__(self, result, operand1, operand2) -> None:
+        super().__init__(result, operand1, operand2, '%')
+# class PowerInstruction(BinaryInstruction):
+#     def __init__(self, result, operand1, operand2) -> None:
+#         super().__init__(result, operand1, operand2, '*')
         
 # Logical
 class AndInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
-        super().__init__(result, operand1, operand2)
-        self.c_operator = '&'
+        super().__init__(result, operand1, operand2, '&')
 class OrInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
-        super().__init__(result, operand1, operand2)
-        self.c_operator = '|'
+        super().__init__(result, operand1, operand2, '|')
 class XorInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
-        super().__init__(result, operand1, operand2)
-        self.c_operator = '^'
+        super().__init__(result, operand1, operand2, '^')
         
 # Shift/Rotations
+class ShiftLInstruction(BinaryInstruction):
+    def __init__(self, result, operand1, operand2) -> None:
+        super().__init__(result, operand1, operand2, '<<')
+class ShiftRInstruction(BinaryInstruction):
+    def __init__(self, result, operand1, operand2) -> None:
+        super().__init__(result, operand1, operand2, '>>')
 class RotlInstruction(CallInstruction):
     def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
         if self.operand1.c_type == uint32_t:
@@ -224,10 +265,20 @@ class RotlInstruction(CallInstruction):
 ##################################################################################
 # SIMD function
 ##################################################################################
-def get_type(var: any, target: Target):
-    match target:
-        case Target.PLAIN_C: return retrieve_name(var.c_type)
-        case _: raise NotImplementedError
+def get_type(var: any, target: Target) -> str:
+    
+    if isinstance(var, Vector) or isinstance(var, VectorMemoryArray): 
+        match target:
+            case Target.PLAIN_C: return retrieve_name(var.c_type)
+            case _: raise NotImplementedError
+            
+    if isinstance(var, Scalar):
+        return retrieve_name(var.c_type)
+    
+    if var is None:
+        return 'void'
+    
+    return retrieve_name(var) 
 
 class Param:
     name: str
@@ -243,6 +294,7 @@ class Function:
     params: list[Param]
     instructions: list[Instruction]
     targets: list[Target]
+    exited: bool = False
     
     def __init__(self, result_type: ctype = void, targets: list[Target] = default_targets):
         self.result_type = result_type
@@ -263,6 +315,7 @@ class Function:
         return self
     
     def __exit__(self, exception_type, exception_value, traceback):
+        self.exited = True
         if exception_type is not None:
             raise exception_type
         
@@ -280,7 +333,7 @@ class Function:
         # Generate code for all targets
         for target in self.targets:
             # Function signature
-            output.write(f'{self.result_type if self.result_type is not None else 'void'} {self.name}(')
+            output.write(f'{get_type(self.result_type, target)} {self.name}(')
             param_separator: str = ''
             for arg in self.params:
                 param_suffix = f'[{arg.obj.num_elems}]' if isinstance(arg.obj, VectorMemoryArray) and arg.obj.num_elems > 0 else ''
@@ -300,9 +353,9 @@ class Function:
             
             instruction_by_tmp = {}
             for instruction in self.instructions:
-                if not isinstance(instruction, StoreInstruction):
+                if not isinstance(instruction, StoreInstruction) and not isinstance(instruction, ReturnInstruction):
                     instruction_by_tmp[instruction.result] = instruction
-                if isinstance(instruction, StoreInstruction) or not instruction.result.is_tmp():
+                if isinstance(instruction, StoreInstruction) or isinstance(instruction, ReturnInstruction) or not instruction.result.is_tmp():
                     # Write comments
                     if instruction.line_number > comments[comment_index].line:
                         output.write('\n'*(comments[comment_index].line - current_line))
@@ -323,10 +376,21 @@ class Function:
                     output.write(instruction.generate_code(target, instruction_by_tmp))
                       
             output.write('\n}\n\n')
-    # def Return(self, value):
-    #     # TODO: 
-    #     if isinstance(value, Vector):
-    #         value.find_name()
+    
+    def Return(self, value):
+        if self.exited:
+            raise TypeError('Function return outside definition')
+        
+        if isinstance(value, Vector):
+            if self.result_type.c_type != value.c_type:
+                raise TypeError
+            self.instructions.append(ReturnInstruction(value))          
+        elif isinstance(value, Scalar):
+            if self.result_type != value.c_type:
+                raise TypeError
+            self.instructions.append(ReturnInstruction(value))
+        else:
+            raise TypeError
 
 defined_functions: list[Function] = []
 def generate_code(filename: str):
@@ -371,12 +435,7 @@ def generate_code(filename: str):
 ##################################################################################
 # SIMD data types
 ##################################################################################
-@dataclass
-class Scalar:
-    c_type: ctype
-    
-    
-class Vector:
+class Variable:
     c_type: ctype
     is_uninitialize: bool = True
     is_constant: bool = False
@@ -403,7 +462,7 @@ class Vector:
     def perform_checks(self, other):
         self.check_uninitialize()
         
-        if isinstance(other, Vector):
+        if isinstance(other, Vector) or isinstance(other, Scalar):
             other.check_uninitialize()
             self.check_same_type(other)
         elif not isinstance(other, int):
@@ -418,7 +477,7 @@ class Vector:
     ########################################################################
     # Binary Operators
     ########################################################################
-    def _binary_op(self, other, op, instruction):
+    def _binary_op(self: "Scalar | Vector", other: "int | float | Scalar | Vector", op, instruction: Instruction):
         self.perform_checks(other)
         
         # Constant folding
@@ -430,30 +489,41 @@ class Vector:
             return self
         
         self.find_name()
-        if isinstance(other, Vector):
+        if isinstance(other, Vector) or isinstance(other, Scalar):
             other.find_name()
         
-        result = Vector(self.c_type, is_uninitialize=False)
+        if isinstance(self, Vector) or isinstance(other, Vector):
+            result = Vector(self.c_type, is_uninitialize=False)
+        elif isinstance(self, Scalar) or isinstance(other, Scalar):
+            result = Scalar(self.c_type, is_uninitialize=False)
+        else:
+            raise TypeError
         defined_functions[-1].instructions.append(instruction(result, self, other))
         return result
         
     def __add__(self, other):
         return self._binary_op(other, operator.__add__, AddInstruction)
-        
-    # def __sub__(self, other): #       –
-    #     pass
-    # def __mul__(self, other): #       *	
-    #     pass
-    # def __truediv__(self, other):  /	
-    # def __floordiv__(self, other): //	
-    # def __mod__(self, other):      %	
-    # def __pow__(self, other):      **	
+    def __sub__(self, other):
+        return self._binary_op(other, operator.__sub__, SubInstruction)
+    def __mul__(self, other):	
+        return self._binary_op(other, operator.__mul__, ProductInstruction)
+    def __truediv__(self, other):
+        return self._binary_op(other, operator.__floordiv__, DivisionInstruction)	
+    def __floordiv__(self, other):
+        return self._binary_op(other, operator.__floordiv__, DivisionInstruction)	
+    def __mod__(self, other):
+        return self._binary_op(other, operator.__mod__, ModuloInstruction)
+    def __pow__(self, other):
+        if other == 2:
+            return self._binary_op(self, operator.__mul__, ProductInstruction)
+        else:
+            raise NotImplementedError
     
     # Shift/Rotations
-    # def __rshift__(self, other): #    >>	
-    #     pass
-    # def __lshift__(self, other): #    <<	
-    #     pass
+    def __rshift__(self, other):
+         return self._binary_op(other, operator.__rshift__, ShiftRInstruction)
+    def __lshift__(self, other):
+         return self._binary_op(other, operator.__lshift__, ShiftLInstruction)
     def rotate_left(self, other):
         global ror_width
         ror_width = sizeof(self.c_type) * 8
@@ -503,6 +573,11 @@ class Vector:
     # +	__pos__(self)
     # ~	__invert__(self)
     
+class Vector(Variable):
+    pass
+class Scalar(Variable):
+    pass
+        
 # TODO: 
 from _ctypes import sizeof
 ror_width = 32
@@ -510,6 +585,7 @@ def rotl(n, shift):
     mask: int = 2**ror_width-1
     return (mask & (n << shift)) | (mask & (n >> (ror_width-shift)))
 def ROTATE(op1: Vector, op2):
+    # TODO: Handle constants here
     return op1.rotate_left(op2)
     
 @dataclass
