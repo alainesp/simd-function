@@ -50,4 +50,4 @@ with Function(void)(state, block) as md4_block:
     state[3] += d;
     
     
-generate_code('tests/md4_block.c')
+generate_code()

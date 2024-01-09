@@ -9,6 +9,8 @@ from inspect import stack
 # from atexit import register as register_at_exit
 from enum import Enum
 import operator
+from os import path
+from pathlib import Path
 
 ##################################################################################
 # Scalar types
@@ -477,13 +479,15 @@ class Function:
             raise TypeError
 
 defined_functions: list[Function] = []
-def generate_code(filename: str):
+def generate_code(filename: str = None, include_tests: bool = True):
     includes: set = {'stdint.h', 'assert.h'}
     for func in defined_functions:
         func.get_includes(includes)
     
     comments: list[Comment] = get_comments()
     
+    if filename is None:
+        filename = get_function_definition_filename().removesuffix('.py') + ".c"
     with open(filename, 'w') as output:
         # Save comments
         line = 1
@@ -524,6 +528,85 @@ def generate_code(filename: str):
                     
             output.writelines(reversed(comments_before))
             func.generate_code(output, comments)
+    
+    # Generate Google Tests
+    if include_tests:
+        with open(path.dirname(filename) + '/CMakeLists.txt', 'w') as cmakelist:
+            cmakelist.write(
+'''
+###############################################################################################################
+# This file is part of 'Fast-Small-Crypto'
+###############################################################################################################
+cmake_minimum_required (VERSION 3.12)
+
+project (fast-small-crypto VERSION 1.0.0.0 DESCRIPTION "Fast crypto implementations for small data" LANGUAGES CXX)
+
+# Enable Hot Reload for MSVC compilers if supported.
+if (POLICY CMP0141)
+  cmake_policy(SET CMP0141 NEW)
+  set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
+endif()
+
+###############################################################################################################
+# Testing
+###############################################################################################################
+include(FetchContent)
+SET(BUILD_GMOCK OFF)
+FetchContent_Declare(googletest URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip)            
+# For Windows: Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+enable_testing()
+
+add_executable(runUnitTests tests.cpp)
+set_property(TARGET runUnitTests PROPERTY CXX_STANDARD 20) # C++ language to use
+target_link_libraries(runUnitTests PRIVATE gtest_main)
+
+include(GoogleTest)
+gtest_discover_tests(runUnitTests)
+
+###############################################################################################################
+# Benchmark
+###############################################################################################################
+add_executable(runBenchmark benchmark.cpp)
+set_property(TARGET runBenchmark PROPERTY CXX_STANDARD 20)	 # C++ language to use
+
+FetchContent_Declare(benchmark URL https://github.com/google/benchmark/archive/refs/tags/v1.8.3.zip)
+set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(benchmark)
+target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::benchmark_main)
+''')
+        
+        with open(path.dirname(filename) + '/tests.cpp', 'w') as tests:
+            tests.write(f'#include <gtest/gtest.h>\n#include "{Path(filename).name}"\n\n')
+            
+        with open(path.dirname(filename) + '/benchmark.cpp', 'w') as benchmark:
+            benchmark.write(f'#include <benchmark/benchmark.h>\n#include "{Path(filename).name}"\n\n')
+            
+            for func in defined_functions:
+                for target in func.targets:
+                    benchmark.write(f'static void BM_{func.name}_{target.name}(benchmark::State& _benchmark_state) ')
+                    benchmark.write('{\n')
+                    # Function params declaration
+                    for arg in func.params:
+                        param_suffix = f'[{arg.obj.num_elems}]' if isinstance(arg.obj, VectorMemoryArray) and arg.obj.num_elems > 0 else ''
+                        benchmark.write(f'\t{get_type(arg.obj, target)} {arg.name}{param_suffix};\n')
+                    
+                    benchmark.write('\tuint32_t num_calls = 0;\n')
+                    benchmark.write('\tfor (auto _ : _benchmark_state) {\n')
+                    benchmark.write(f'\t\t{func.name}_{target.name}(')
+                    param_separator: str = ''
+                    for arg in func.params:
+                        benchmark.write(f'{param_separator}{arg.name}')
+                        param_separator = ', '
+                    benchmark.write(');\n\t\tnum_calls++;\n\t}\n')
+                    benchmark.write(f'\t_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * {
+                        1 if target == Target.PLAIN_C else (4 if target == Target.SSE2_INTRINSICS else 8)}, benchmark::Counter::kIsRate);\n')
+                    benchmark.write('}\n')
+                    # Register the function as a benchmark
+                    benchmark.write(f'BENCHMARK(BM_{func.name}_{target.name});\n\n')
+            
         
 #register_at_exit(generate_code)
    

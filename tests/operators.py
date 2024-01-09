@@ -41,4 +41,4 @@ with Function(Vector(uint32_t))(op1, op2_scalar) as shiftl:
 with Function(Vector(uint32_t))(op1, op2_scalar) as shiftr:
     shiftr.Return(op1 >> op2_scalar)
     
-generate_code('tests/operators.c')
+generate_code()
