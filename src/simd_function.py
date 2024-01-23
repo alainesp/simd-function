@@ -93,6 +93,12 @@ class Target(IntEnum):
     MASM64_AVX2       = 6
 
 default_targets: list[Target] = [Target.PLAIN_C, Target.SSE2_INTRINSICS, Target.AVX2_INTRINSICS, Target.MASM64_AVX, Target.MASM64_AVX2]
+def target_simd_size(target: Target) -> int:
+    match target:
+        case Target.PLAIN_C: return 1
+        case Target.SSE2_INTRINSICS | Target.AVX_INTRINSICS | Target.MASM64_AVX: return 4
+        case Target.AVX2_INTRINSICS | Target.MASM64_AVX2: return 8
+        case _: raise NotImplementedError
 
 ##################################################################################
 # Instructions
@@ -101,17 +107,17 @@ from _ctypes import sizeof
 
 @dataclass
 class Instruction:
-    result: any
+    result: 'Variable'
     line_number: int
     
-    def generate_code(self, target: Target, instruction_by_tmp: dict[any, any]):
+    def generate_code(self, target: Target, instruction_by_tmp: dict['Variable', 'Instruction']):
         raise NotImplementedError
     def register_constant(self, constants: set[int | float]):
         pass
     def use_value(self, value) -> bool:
         return False
 
-def get_expresion(tmp: any, target: Target, instruction_by_tmp: dict[any, Instruction]) -> str:
+def get_expresion(tmp: 'int | float | Variable', target: Target, instruction_by_tmp: dict['Variable', Instruction]) -> str:
     if isinstance(tmp, int) or isinstance(tmp, float):
         return f'{tmp}'
     if target == Target.PLAIN_C and tmp.is_constant:
@@ -537,14 +543,20 @@ class Function:
             
         return result + ')'
     
-    def generate_code(self, output, comments: list[Comment]):
+    def generate_code(self, output, comments: list[Comment], is_header: bool):
+        if is_header:
+            for target in self.targets:
+                output.write(f'{get_type(self.result_type, target)} {self.name}_{target.name}{self.__get_params_definition(target)};\n')
+                
+            return
+        
         # Find the instruction by the result
         instruction_by_tmp = {}
         for instruction in self.instructions:
             if not isinstance(instruction, StoreInstruction) and not isinstance(instruction, ReturnInstruction):
                 instruction_by_tmp[instruction.result] = instruction
                     
-        if Target.MASM64_AVX in self.targets or Target.MASM64_AVX2 in self.targets:   
+        if Target.MASM64_AVX in self.targets or Target.MASM64_AVX2 in self.targets:
             # Last time we use the register
             last_use: dict[Vector, int] = {}
             for i, instruction in enumerate(self.instructions):
@@ -591,7 +603,7 @@ class Function:
             # Function signature
             match target:
                 case Target.PLAIN_C | Target.SSE2_INTRINSICS | Target.AVX_INTRINSICS | Target.AVX2_INTRINSICS:
-                    output.write(f'{get_type(self.result_type, target)} {self.name}_{target.name}{self.__get_params_definition(target)}')         
+                    output.write(f'{get_type(self.result_type, target)} {self.name}_{target.name}{self.__get_params_definition(target)}')
                     output.write(' {\n')
                 case Target.MASM64_AVX | Target.MASM64_AVX2:
                     x64_abi_params = ['rcx', 'rdx', 'r8', 'r9']
@@ -662,12 +674,8 @@ class Function:
         if self.exited:
             raise TypeError('Function return outside definition')
         
-        if isinstance(value, Vector):
+        if isinstance(value, Variable):
             if self.result_type.c_type != value.c_type:
-                raise TypeError
-            self.instructions.append(ReturnInstruction(value))          
-        elif isinstance(value, Scalar):
-            if self.result_type != value.c_type:
                 raise TypeError
             self.instructions.append(ReturnInstruction(value))
         else:
@@ -687,8 +695,9 @@ def generate_code_one_file(filename: str, targets: set[Target], comments: list[C
     for func in functions:
         for instruction in func.instructions:
             instruction.register_constant(constants)
-            
-    is_masm_file: bool = Target.MASM64_AVX in targets or Target.MASM64_AVX2 in targets
+          
+    is_header = filename.endswith('.h')  
+    is_masm_file: bool = not is_header and (Target.MASM64_AVX in targets or Target.MASM64_AVX2 in targets)
     
     with open(filename, 'w') as output:
         # Save comments
@@ -741,18 +750,27 @@ ALIGN 64
             output.write('.code\n')
         
         # Get macros needed
-        macros = set()
-        for func in functions:
-            for instruction in func.instructions:
-                if hasattr(instruction, 'used_macros'):
-                    for t in func.targets:
-                        macro = instruction.used_macros(t)
-                        if macro:
-                            macros.add(macro)
-        # Write the macros
-        output.writelines(macros)
-        output.write('\n')
+        if not is_header:
+            macros = set()
+            for func in functions:
+                for instruction in func.instructions:
+                    if hasattr(instruction, 'used_macros'):
+                        for t in func.targets:
+                            macro = instruction.used_macros(t)
+                            if macro:
+                                macros.add(macro)
+            # Write the macros
+            output.writelines(macros)
+            output.write('\n')
         
+        if is_header:
+            output.write(
+'''#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+''')
         for func in functions:
             # Functions comments
             comments_before = []
@@ -766,7 +784,14 @@ ALIGN 64
                     line -= 1
                     
             output.writelines(reversed(comments_before))
-            func.generate_code(output, comments)
+            func.generate_code(output, comments, is_header)
+            
+        if is_header:
+            output.write('''
+#ifdef __cplusplus
+}
+#endif
+''')
             
         # End of file
         if is_masm_file:
@@ -795,6 +820,7 @@ def generate_code(filename_root: str = None, include_tests: bool = True):
         filename_root = get_function_definition_filename().removesuffix('.py')
     
     # Generate code
+    generate_code_one_file(filename_root + ".h", c_code_targets | masm64_targets, comments)
     if len(c_code_targets) > 0:
         generate_code_one_file(filename_root + ".c", c_code_targets, comments)
     for comment in comments:
@@ -842,7 +868,7 @@ gtest_discover_tests(runUnitTests)
 ###############################################################################################################
 # Benchmark
 ###############################################################################################################
-add_executable(runBenchmark benchmark.cpp md4.asm arch_x64.asm)
+add_executable(runBenchmark benchmark.cpp md4.c md4.asm arch_x64.asm)
 set_property(TARGET runBenchmark PROPERTY CXX_STANDARD 20)	 # C++ language to use
 
 FetchContent_Declare(benchmark URL https://github.com/google/benchmark/archive/refs/tags/v1.8.3.zip)
@@ -855,7 +881,7 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
             tests.write(f'#include <gtest/gtest.h>\n#include "{Path(filename_root).name}"\n\n')
             
         with open(path.dirname(filename_root) + '/benchmark.cpp', 'w') as benchmark:
-            benchmark.write(f'#include <benchmark/benchmark.h>\n#include "{Path(filename_root).name}"\n\n')
+            benchmark.write(f'#include <benchmark/benchmark.h>\n#include "{Path(filename_root).name}.h"\n\n')
             
             for func in defined_functions:
                 for target in func.targets:
@@ -874,8 +900,7 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
                         benchmark.write(f'{param_separator}{arg.name}')
                         param_separator = ', '
                     benchmark.write(');\n\t\tnum_calls++;\n\t}\n')
-                    benchmark.write(f'\t_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * {
-                        1 if target == Target.PLAIN_C else (4 if target == Target.SSE2_INTRINSICS else 8)}, benchmark::Counter::kIsRate);\n')
+                    benchmark.write(f'\t_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * {target_simd_size(target)}, benchmark::Counter::kIsRate);\n')
                     benchmark.write('}\n')
                     # Register the function as a benchmark
                     benchmark.write(f'BENCHMARK(BM_{func.name}_{target.name});\n\n')
