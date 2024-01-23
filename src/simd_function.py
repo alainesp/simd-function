@@ -12,6 +12,7 @@ import operator
 from os import path
 from pathlib import Path
 from termcolor import colored
+from copy import deepcopy
 
 ##################################################################################
 # Scalar types
@@ -145,7 +146,7 @@ def is_float_type(c_type: ctype):
     return c_type == float or c_type == double
 
 class LoadInstruction(Instruction):
-    memory: any
+    memory: 'MemoryArray'
     index: any # Should support any index (constant, scalar, ...)
     
     def __init__(self, result, memory, index) -> None:
@@ -163,11 +164,11 @@ class LoadInstruction(Instruction):
             
         # Load data instruction
         if target == Target.MASM64_AVX or target == Target.MASM64_AVX2:
-            memory_expression = f'[{self.memory.name}+{self.index}*REG_BYTE_SIZE]'
+            memory_expression = f'[{self.memory.name} + {self.index}*REG_BYTE_SIZE]'
             if self.result.is_tmp():
                 return memory_expression
             else:
-                return f'vmovdq{'a' if self.memory.alignment >= 16 else 'u'} {self.result.name}, {get_reg_simd_name(target)}word ptr {memory_expression}'
+                return f'vmovdq{'a' if self.memory.alignment >= 16 else 'u'} {self.result.name}, {get_reg_simd_name(target)}word ptr {memory_expression}\n'
         else:
             aligment_str = '' if self.memory.alignment >= 16 else 'u' # TODO: handle this
             # Expresion
@@ -178,7 +179,7 @@ class LoadInstruction(Instruction):
                 return f'{self.result.name} = {memory_expression};'
         
 class StoreInstruction(Instruction):
-    memory: any
+    memory: 'MemoryArray'
     index: any # Should support any index (constant, scalar, ...)
     operand: 'Scalar | Vector | int | float'
     
@@ -206,8 +207,8 @@ class StoreInstruction(Instruction):
             return f'{memory_expression} = {get_expresion(self.operand, target, instruction_by_tmp)};'
         
         if target == Target.MASM64_AVX or target == Target.MASM64_AVX2:
-            memory_expression = f'[{self.memory.name}+{self.index}*REG_BYTE_SIZE]'
-            return f'vmovdq{'a' if self.memory.alignment >= 16 else 'u'} {get_reg_simd_name(target)}word ptr {memory_expression}, {self.operand.name}'
+            memory_expression = f'[{self.memory.name} + {self.index}*REG_BYTE_SIZE]'
+            return f'vmovdq{'a' if self.memory.alignment >= 16 else 'u'} {get_reg_simd_name(target)}word ptr {memory_expression}, {self.operand.name}\n'
         else:
             # Load data instruction
             aligment_str = '' if self.memory.alignment >= 16 else 'u'
@@ -492,6 +493,7 @@ class Function:
     params: list['Variable | MemoryArray']
     instructions: list[Instruction]
     targets: list[Target]
+    parallelization_factor: dict[Target, int]
     exited: bool = False
     
     def __init__(self, result_type: ctype = void, targets: list[Target] = default_targets):
@@ -499,6 +501,9 @@ class Function:
         self.params = []
         self.instructions = []
         self.targets = targets
+        self.parallelization_factor = {}
+        for target in Target:
+            self.parallelization_factor[target] = 1
     
     def __call__(self, *args):
         for arg in args:
@@ -546,15 +551,19 @@ class Function:
     def generate_code(self, output, comments: list[Comment], is_header: bool):
         if is_header:
             for target in self.targets:
+                # Parallelization
+                for arg in self.params:
+                    if isinstance(arg, VectorMemoryArray):       
+                        arg.num_elems *= self.parallelization_factor[target]
                 output.write(f'{get_type(self.result_type, target)} {self.name}_{target.name}{self.__get_params_definition(target)};\n')
-                
+                # Revert Parallelization
+                for arg in self.params:
+                    if isinstance(arg, VectorMemoryArray):       
+                        arg.num_elems //= self.parallelization_factor[target]            
             return
         
-        # Find the instruction by the result
-        instruction_by_tmp = {}
-        for instruction in self.instructions:
-            if not isinstance(instruction, StoreInstruction) and not isinstance(instruction, ReturnInstruction):
-                instruction_by_tmp[instruction.result] = instruction
+        old_instructions = self.instructions
+        old_params = self.params
                     
         if Target.MASM64_AVX in self.targets or Target.MASM64_AVX2 in self.targets:
             # Last time we use the register
@@ -600,6 +609,48 @@ class Function:
         
         # Generate code for all targets
         for target in self.targets:
+            ########################################################################################
+            # Parallelization
+            ########################################################################################
+            parallel_factor = self.parallelization_factor[target]
+            # Params
+            self.params = deepcopy(old_params)
+            for arg in self.params:
+                if isinstance(arg, VectorMemoryArray):       
+                    arg.num_elems *= parallel_factor
+                    
+            self.instructions = [] 
+            if parallel_factor <= 1:
+                self.instructions = deepcopy(old_instructions)
+            elif parallel_factor == 2:
+                for ins0, ins1 in zip(deepcopy(old_instructions), deepcopy(old_instructions)):
+                    self.instructions += [ins0, ins1]
+            elif parallel_factor == 3:
+                for ins0, ins1, ins2 in zip(deepcopy(old_instructions), deepcopy(old_instructions), deepcopy(old_instructions)):
+                    self.instructions += [ins0, ins1, ins2]
+            elif parallel_factor == 4:
+                for ins0, ins1, ins2, ins3 in zip(deepcopy(old_instructions), deepcopy(old_instructions), deepcopy(old_instructions), deepcopy(old_instructions)):
+                    self.instructions += [ins0, ins1, ins2, ins3]
+            else:
+                raise NotImplementedError
+            
+            if parallel_factor > 1:
+                for i in range(0, len(self.instructions), parallel_factor):
+                    # Variables
+                    if self.instructions[i].result and self.instructions[i].result.name:
+                        for p in range(parallel_factor):
+                            self.instructions[i + p].result.name += f'_{p}'
+                    # Memory access
+                    if isinstance(self.instructions[i], LoadInstruction) or isinstance(self.instructions[i], StoreInstruction):
+                        for p in range(parallel_factor):
+                            self.instructions[i + p].index = self.instructions[i + p].index * parallel_factor + p
+            ########################################################################################
+            # Find the instruction by the result
+            instruction_by_tmp = {}
+            for instruction in self.instructions:
+                if not isinstance(instruction, StoreInstruction) and not isinstance(instruction, ReturnInstruction):
+                    instruction_by_tmp[instruction.result] = instruction
+                
             # Function signature
             match target:
                 case Target.PLAIN_C | Target.SSE2_INTRINSICS | Target.AVX_INTRINSICS | Target.AVX2_INTRINSICS:
@@ -669,6 +720,9 @@ class Function:
                 case Target.MASM64_AVX | Target.MASM64_AVX2:
                     output.write(f'\n\n\tvzeroupper\n\tRET\n{self.name}_{target.name} ENDP\n\n')
                 case _: raise NotImplementedError
+                
+        self.instructions = old_instructions
+        self.params = old_params
     
     def Return(self, value):
         if self.exited:
@@ -889,7 +943,7 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
                     benchmark.write('{\n')
                     # Function params declaration
                     for arg in func.params:
-                        param_suffix = f'[{arg.num_elems}]' if isinstance(arg, MemoryArray) else ''
+                        param_suffix = f'[{arg.num_elems * (func.parallelization_factor[target] if isinstance(arg, VectorMemoryArray) else 1)}]' if isinstance(arg, MemoryArray) else ''
                         benchmark.write(f'\t{get_type(arg, target)} {arg.name}{param_suffix};\n')
                     
                     benchmark.write('\tuint32_t num_calls = 0;\n')
@@ -900,7 +954,8 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
                         benchmark.write(f'{param_separator}{arg.name}')
                         param_separator = ', '
                     benchmark.write(');\n\t\tnum_calls++;\n\t}\n')
-                    benchmark.write(f'\t_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * {target_simd_size(target)}, benchmark::Counter::kIsRate);\n')
+                    benchmark.write(f'\t_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * {
+                        target_simd_size(target) * func.parallelization_factor[target]}, benchmark::Counter::kIsRate);\n')
                     benchmark.write('}\n')
                     # Register the function as a benchmark
                     benchmark.write(f'BENCHMARK(BM_{func.name}_{target.name});\n\n')
