@@ -284,6 +284,14 @@ class BinaryInstruction(Instruction):
         operand1_expression, operand2_expression = self.get_expresions(target, instruction_by_tmp)
         
         if target == Target.MASM64_AVX or target == Target.MASM64_AVX2:
+            # Check memory access
+            if self.operand1.is_tmp() and isinstance(instruction_by_tmp[self.operand1], LoadInstruction) and \
+               self.operand2.is_tmp() and isinstance(instruction_by_tmp[self.operand2], LoadInstruction):
+                raise TypeError
+            # Move memory access to last operand
+            if self.operand1.is_tmp() and isinstance(instruction_by_tmp[self.operand1], LoadInstruction):
+                operand1_expression, operand2_expression = operand2_expression, operand1_expression
+            
             return f'{self.get_call(target)}    {self.result.name}, {operand1_expression}, {operand2_expression}\n'
         else:
             if self.c_operator and (target == Target.PLAIN_C or (isinstance(self.operand1, Scalar) and (isinstance(self.operand2, Scalar) or isinstance(self.operand2, int)))):
@@ -542,6 +550,8 @@ class Function:
 
             tmp_in_use: list[bool] = [False] * 64
             tmp_reset: list[list[int]] =[ [] for _ in range(len(self.instructions)) ]
+            x64_registers: set[str] = set()
+            num_mem_loads, num_mem_stores, num_logical_arithmetic, num_shifts = 0, 0, 0, 0
             for i, instruction in enumerate(self.instructions):
                 # Reset elements
                 for index in tmp_reset[i]:
@@ -552,8 +562,25 @@ class Function:
                     instruction.result.name = f't{tmp_index}'
                     tmp_in_use[tmp_index] = True
                     tmp_reset[last_use[instruction.result]].append(tmp_index)
+                    
+                # Count registers
+                if instruction.result and instruction.result.name:
+                    x64_registers.add(instruction.result.name)
+                # Count instructions
+                if isinstance(instruction, LoadInstruction): num_mem_loads += 1
+                if isinstance(instruction, StoreInstruction): num_mem_stores += 1
+                if isinstance(instruction, LogicalInstruction) or isinstance(instruction, AddInstruction): num_logical_arithmetic += 1
+                if isinstance(instruction, RotlInstruction): num_shifts += 2; num_logical_arithmetic += 1
+                if isinstance(instruction, ShiftLInstruction) or isinstance(instruction, ShiftRInstruction): num_shifts += 1
             
-            print(f'Function: {colored(self.name, 'green')}\n\tInstructions: {len(self.instructions)}\n')
+            # Show data
+            print(f'Function: {colored(self.name, 'green')}')
+            print(f'\tSIMD Register: {len(x64_registers)} / 16')
+            print(f'\tInstructions: {len(self.instructions)}')
+            print(f'\tMemLoads: {num_mem_loads}')
+            print(f'\tMemStores: {num_mem_stores}')
+            print(f'\tLogicalArithmetics: {num_logical_arithmetic}')
+            print(f'\tShifts: {num_shifts}')
         
         # Generate code for all targets
         for target in self.targets:
@@ -575,16 +602,24 @@ class Function:
                     for index,arg in enumerate(self.params):
                         output.write(f'{arg.name} EQU {x64_abi_params[index]}\n')
                         
-                    x64_registers = []
+                    x64_registers: list[str] = []
                     for instruction in self.instructions:
-                        if instruction.result and instruction.result.name and instruction.result.name not in [reg.name for reg in x64_registers]:
-                            x64_registers.append(instruction.result)
+                        if instruction.result and instruction.result.name and instruction.result.name not in [reg_name for reg_name in x64_registers]:
+                            x64_registers.append(instruction.result.name)
                     
                     # TODO: Use registers depending on var type
-                    for index,var in enumerate(x64_registers):
-                        output.write(f'{var.name} EQU {get_reg_simd_name(target)}{index}\n')
+                    for index,var_name in enumerate(x64_registers):
+                        output.write(f'{var_name} EQU {get_reg_simd_name(target)}{index}\n')
                         
-                    output.write(f'\n{self.name}_{target.name} PROC\n')
+                    # Function signature
+                    output.write(f'{self.name}_{target.name} PROC ;(')
+                    
+                    param_separator: str = ''
+                    for arg in self.params:
+                        param_suffix = f'[{arg.obj.num_elems}]' if isinstance(arg.obj, VectorMemoryArray) and arg.obj.num_elems > 0 else ''
+                        output.write(f'{param_separator}{get_type(arg.obj, target)} {arg.name}{param_suffix}')
+                        param_separator = ', '
+                    output.write(f') -> {get_type(self.result_type, target)}\n')
                 case _: raise NotImplementedError
             
             variable_names = set()
