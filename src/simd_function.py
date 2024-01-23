@@ -480,18 +480,10 @@ def get_reg_simd_name(target: Target) -> str:
         case Target.MASM64_AVX2: return 'ymm'
         case _: raise NotImplementedError
 
-class Param:
-    name: str
-    obj: any
-    
-    def __init__(self, obj) -> None:
-        self.obj = obj
-        self.name = retrieve_name(obj)
-
 class Function:
     result_type: ctype
     name: str
-    params: list[Param]
+    params: list['Variable | MemoryArray']
     instructions: list[Instruction]
     targets: list[Target]
     exited: bool = False
@@ -504,7 +496,8 @@ class Function:
     
     def __call__(self, *args):
         for arg in args:
-            self.params.append(Param(arg))
+            self.params.append(arg)
+            arg.find_name()
         return self
             
     # with managment
@@ -532,6 +525,17 @@ class Function:
                 case Target.AVX2_INTRINSICS: includes.add('immintrin.h')
                 case Target.MASM64_AVX | Target.MASM64_AVX2: pass
                 case _: raise NotImplementedError
+    
+    def __get_params_definition(self, target: Target) -> str:
+        result = '('
+        
+        param_separator: str = ''
+        for arg in self.params:
+            param_suffix = f'[{arg.num_elems}]' if isinstance(arg, MemoryArray) else ''
+            result += f'{param_separator}{get_type(arg, target)} {arg.name}{param_suffix}'
+            param_separator = ', '
+            
+        return result + ')'
     
     def generate_code(self, output, comments: list[Comment]):
         # Find the instruction by the result
@@ -587,13 +591,8 @@ class Function:
             # Function signature
             match target:
                 case Target.PLAIN_C | Target.SSE2_INTRINSICS | Target.AVX_INTRINSICS | Target.AVX2_INTRINSICS:
-                    output.write(f'{get_type(self.result_type, target)} {self.name}_{target.name}(')
-                    param_separator: str = ''
-                    for arg in self.params:
-                        param_suffix = f'[{arg.obj.num_elems}]' if isinstance(arg.obj, VectorMemoryArray) and arg.obj.num_elems > 0 else ''
-                        output.write(f'{param_separator}{get_type(arg.obj, target)} {arg.name}{param_suffix}')
-                        param_separator = ', '
-                    output.write(') {\n')
+                    output.write(f'{get_type(self.result_type, target)} {self.name}_{target.name}{self.__get_params_definition(target)}')         
+                    output.write(' {\n')
                 case Target.MASM64_AVX | Target.MASM64_AVX2:
                     x64_abi_params = ['rcx', 'rdx', 'r8', 'r9']
                     
@@ -612,14 +611,7 @@ class Function:
                         output.write(f'{var_name} EQU {get_reg_simd_name(target)}{index}\n')
                         
                     # Function signature
-                    output.write(f'{self.name}_{target.name} PROC ;(')
-                    
-                    param_separator: str = ''
-                    for arg in self.params:
-                        param_suffix = f'[{arg.obj.num_elems}]' if isinstance(arg.obj, VectorMemoryArray) and arg.obj.num_elems > 0 else ''
-                        output.write(f'{param_separator}{get_type(arg.obj, target)} {arg.name}{param_suffix}')
-                        param_separator = ', '
-                    output.write(f') -> {get_type(self.result_type, target)}\n')
+                    output.write(f'{self.name}_{target.name} PROC ;{self.__get_params_definition(target)} -> {get_type(self.result_type, target)}\n')
                 case _: raise NotImplementedError
             
             variable_names = set()
@@ -871,8 +863,8 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
                     benchmark.write('{\n')
                     # Function params declaration
                     for arg in func.params:
-                        param_suffix = f'[{arg.obj.num_elems}]' if isinstance(arg.obj, VectorMemoryArray) and arg.obj.num_elems > 0 else ''
-                        benchmark.write(f'\t{get_type(arg.obj, target)} {arg.name}{param_suffix};\n')
+                        param_suffix = f'[{arg.num_elems}]' if isinstance(arg, MemoryArray) else ''
+                        benchmark.write(f'\t{get_type(arg, target)} {arg.name}{param_suffix};\n')
                     
                     benchmark.write('\tuint32_t num_calls = 0;\n')
                     benchmark.write('\tfor (auto _ : _benchmark_state) {\n')
