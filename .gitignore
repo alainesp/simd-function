@@ -161,3 +161,4 @@ cython_debug/
 /tests/.vs
 /bool_optimization/.vs
 /.vscode
+/.vs

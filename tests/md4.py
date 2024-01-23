@@ -44,10 +44,10 @@ with Function(void)(state, block) as md4_block:
         c += (b ^ a ^ d) + block[i+4]  + SQRT_3; c = rotl(c, 11);
         b += (a ^ d ^ c) + block[i+12] + SQRT_3; b = rotl(b, 15);
 
-    state[0] += a;
-    state[1] += b;
-    state[2] += c;
-    state[3] += d;
+    state[0] = a + state[0];
+    state[1] = b + state[1];
+    state[2] = c + state[2];
+    state[3] = d + state[3];
     
     
 generate_code()
