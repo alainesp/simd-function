@@ -93,7 +93,7 @@ class Target(IntEnum):
     MASM64_AVX        = 5
     MASM64_AVX2       = 6
 
-default_targets: list[Target] = [Target.PLAIN_C, Target.SSE2_INTRINSICS, Target.AVX2_INTRINSICS, Target.MASM64_AVX, Target.MASM64_AVX2]
+default_targets: list[Target] = [Target.PLAIN_C, Target.AVX2_INTRINSICS, Target.MASM64_AVX2]
 def target_simd_size(target: Target) -> int:
     match target:
         case Target.PLAIN_C: return 1
@@ -298,6 +298,8 @@ class BinaryInstruction(Instruction):
             # Move memory access to last operand
             if self.operand1.is_tmp() and isinstance(instruction_by_tmp[self.operand1], LoadInstruction):
                 operand1_expression, operand2_expression = operand2_expression, operand1_expression
+            elif self.result.name and self.result.name == operand2_expression:
+                operand1_expression, operand2_expression = operand2_expression, operand1_expression
             
             return f'{self.get_call(target)}    {self.result.name}, {operand1_expression}, {operand2_expression}\n'
         else:
@@ -391,9 +393,12 @@ class ShiftLInstruction(BinaryInstruction):
         
     def get_call(self, target: Target) -> str:
         if isinstance(self.operand2, int) or isinstance(self.operand2, Scalar):
-            return f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_{get_vector_ins_sizeof('slli_', self.operand1.c_type)}'
-        if isinstance(self.operand2, Vector):
-            return f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_{get_vector_ins_sizeof('sll_', self.operand1.c_type)}'
+            match target:
+                case Target.SSE2_INTRINSICS: return f'_mm_slli_{get_vector_ins_sizeof('', self.operand1.c_type)}'
+                case Target.AVX2_INTRINSICS: return f'_mm256_slli_{get_vector_ins_sizeof('', self.operand1.c_type)}'
+                case Target.MASM64_AVX | Target.MASM64_AVX2: return f'vpslld' # TODO: handle floats
+                case _: raise NotImplementedError
+        
         raise TypeError
 class ShiftRInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
@@ -404,9 +409,12 @@ class ShiftRInstruction(BinaryInstruction):
        
     def get_call(self, target: Target) -> str:
         if isinstance(self.operand2, int) or isinstance(self.operand2, Scalar):
-            return f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_{get_vector_ins_sizeof('srli_', self.operand1.c_type)}'
-        if isinstance(self.operand2, Vector):
-            return f'_mm{'' if target == Target.SSE2_INTRINSICS else '256'}_{get_vector_ins_sizeof('srl_', self.operand1.c_type)}'
+            match target:
+                case Target.SSE2_INTRINSICS: return f'_mm_srli_{get_vector_ins_sizeof('', self.operand1.c_type)}'
+                case Target.AVX2_INTRINSICS: return f'_mm256_srli_{get_vector_ins_sizeof('', self.operand1.c_type)}'
+                case Target.MASM64_AVX | Target.MASM64_AVX2: return f'vpsrld' # TODO: handle floats
+                case _: raise NotImplementedError
+        
         raise TypeError
 class RotlInstruction(BinaryInstruction):
     def register_constant(self, constants: set[int | float]):
@@ -548,6 +556,21 @@ class Function:
             
         return result + ')'
     
+    def __convert_rotations_to_shifts(self):
+        for ins in self.instructions:
+            if isinstance(ins, RotlInstruction):
+                i = self.instructions.index(ins)
+                self.instructions.remove(ins)
+                
+                t0 = Vector(ins.result.c_type, is_uninitialize=False)
+                t1 = Vector(ins.result.c_type, is_uninitialize=False)
+                self.instructions.insert(i, ShiftRInstruction(t0, ins.operand1, sizeof(t0.c_type)*8-ins.operand2))
+                self.instructions.insert(i+1, ShiftLInstruction(t1, ins.operand1, ins.operand2))
+                self.instructions.insert(i+2, OrInstruction(ins.result, t1, t0))
+                self.instructions[i].line_number = ins.line_number
+                self.instructions[i+1].line_number = ins.line_number
+                self.instructions[i+2].line_number = ins.line_number
+                
     def generate_code(self, output, comments: list[Comment], is_header: bool):
         if is_header:
             for target in self.targets:
@@ -562,6 +585,9 @@ class Function:
                         arg.num_elems //= self.parallelization_factor[target]            
             return
         
+        if not hasattr(self, 'instructions_with_rot'):
+            self.instructions_with_rot = deepcopy(self.instructions)
+        self.__convert_rotations_to_shifts()
         old_instructions = self.instructions
         old_params = self.params
                     
@@ -577,16 +603,26 @@ class Function:
             tmp_reset: list[list[int]] =[ [] for _ in range(len(self.instructions)) ]
             x64_registers: set[str] = set()
             num_mem_loads, num_mem_stores, num_logical_arithmetic, num_shifts = 0, 0, 0, 0
+            tmps_vector = set()
             for i, instruction in enumerate(self.instructions):
                 # Reset elements
                 for index in tmp_reset[i]:
                     tmp_in_use[index] = False
                 
                 if instruction.result and instruction.result.is_tmp() and not isinstance(instruction, LoadInstruction):
-                    tmp_index = tmp_in_use.index(False)
-                    instruction.result.name = f't{tmp_index}'
-                    tmp_in_use[tmp_index] = True
-                    tmp_reset[last_use[instruction.result]].append(tmp_index)
+                    # Reuse variables
+                    if hasattr(instruction, 'operand1') and isinstance(instruction.operand1, Vector) and instruction.operand1.name and \
+                        instruction.operand1 not in tmps_vector and instruction.operand1 in last_use and last_use[instruction.operand1] <= i:
+                        instruction.result.name = instruction.operand1.name
+                    elif hasattr(instruction, 'operand2') and isinstance(instruction.operand2, Vector) and instruction.operand2.name and \
+                        instruction.operand2 not in tmps_vector and instruction.operand2 in last_use and last_use[instruction.operand2] <= i:
+                        instruction.result.name = instruction.operand2.name
+                    else:
+                        tmp_index = tmp_in_use.index(False)
+                        instruction.result.name = f't{tmp_index}'
+                        tmp_in_use[tmp_index] = True
+                        tmp_reset[last_use[instruction.result]].append(tmp_index)
+                        tmps_vector.add(instruction.result)
                     
                 # Count registers
                 if instruction.result and instruction.result.name:
@@ -621,7 +657,7 @@ class Function:
                     
             self.instructions = [] 
             if parallel_factor <= 1:
-                self.instructions = deepcopy(old_instructions)
+                self.instructions = deepcopy(old_instructions) if target != Target.PLAIN_C else self.instructions_with_rot
             elif parallel_factor == 2:
                 for ins0, ins1 in zip(deepcopy(old_instructions), deepcopy(old_instructions)):
                     self.instructions += [ins0, ins1]
@@ -639,12 +675,13 @@ class Function:
                     # Variables
                     if self.instructions[i].result and self.instructions[i].result.name:
                         for p in range(parallel_factor):
-                            self.instructions[i + p].result.name += f'_{p}'
+                            self.instructions[i + p].result.name += f'{p}'
                     # Memory access
                     if isinstance(self.instructions[i], LoadInstruction) or isinstance(self.instructions[i], StoreInstruction):
                         for p in range(parallel_factor):
                             self.instructions[i + p].index = self.instructions[i + p].index * parallel_factor + p
             ########################################################################################
+                
             # Find the instruction by the result
             instruction_by_tmp = {}
             for instruction in self.instructions:
@@ -962,31 +999,17 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
                     
             benchmark.write('''
 // My code
-extern "C" void dcc_ntlm_part_avx(__m128i state[8], __m128i block[32]);
-extern "C" void dcc_ntlm_part_avx2(__m256i state[8], __m256i block[32]);
-static void BM_md4_block_avx_asm(benchmark::State& _benchmark_state) {
-	__m128i state[8];
-	__m128i block[32];
-	uint32_t num_calls = 0;
-	for (auto _ : _benchmark_state) {
-		dcc_ntlm_part_avx(state, block);
-		num_calls++;
-	}
-	_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * 8, benchmark::Counter::kIsRate);
-}
-BENCHMARK(BM_md4_block_avx_asm);
-
-//#include <intrin.h>
+extern "C" void dcc_ntlm_part_avx2(__m256i state[12], __m256i block[48]);
 static void BM_md4_block_avx2_asm(benchmark::State& _benchmark_state) {
-	__m256i state[8];
-	__m256i block[32];
+	__m256i state[12];
+	__m256i block[48];
 	uint32_t num_calls = 0;
 
 	for (auto _ : _benchmark_state) {
 		dcc_ntlm_part_avx2(state, block);
 		num_calls++;
 	}
-	_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * 16, benchmark::Counter::kIsRate);
+	_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * 24, benchmark::Counter::kIsRate);
 }
 BENCHMARK(BM_md4_block_avx2_asm);
 ''')
