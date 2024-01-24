@@ -43,7 +43,6 @@ static bool operator==(const operation& op1, const operation& op2) noexcept
 }
 static std::vector<std::vector<operation>> found;
 static operation my_operations[32];
-static uint32_t num_operations = 0;
 
 // Boolen Function to optimize
 //static constexpr uint64_t function_truth_table = ((VAR_TRUTH_TABLE[0] & (VAR_TRUTH_TABLE[1] | VAR_TRUTH_TABLE[2])) | (VAR_TRUTH_TABLE[1] & VAR_TRUTH_TABLE[2]));
@@ -54,7 +53,7 @@ static constexpr uint64_t function_truth_tables[] = {
 	((VAR_TRUTH_TABLE[3] & (VAR_TRUTH_TABLE[0] | VAR_TRUTH_TABLE[1])) | (VAR_TRUTH_TABLE[0] & VAR_TRUTH_TABLE[1]))
 };
 static constexpr uint32_t num_function_params = 4;// 3;
-static uint32_t max_function_depth = 6;//3;
+static uint32_t max_function_depth = 5;//3;
 static constexpr uint32_t VALUE_FOUND_MASK = ~(UINT32_MAX << std::size(function_truth_tables));
 
 static std::chrono::time_point<std::chrono::steady_clock> start;
@@ -73,7 +72,7 @@ static void recursive_optimize(uint32_t depth, uint32_t vars_index, uint32_t val
 
 		// Create the operations
 		std::vector<operation> operations;
-		for (uint32_t i = 0; i < num_operations; i++)
+		for (uint32_t i = 0; i < depth; i++)
 			operations.push_back(my_operations[i]);
 		found.push_back(std::move(operations));
 		return;
@@ -82,33 +81,35 @@ static void recursive_optimize(uint32_t depth, uint32_t vars_index, uint32_t val
 	if (depth >= max_function_depth) return;
 
 	// Unary operation => not
+	my_operations[depth].op_index = 0;
+	my_operations[depth].var1_index = -1;
 	for (uint32_t i = 0; i < vars_index; i++)
 	{
-		my_operations[num_operations] = operation(0, i, -1);
-		num_operations++;
+		my_operations[depth].var0_index = i;
 		vars[vars_index] = ~vars[i];
 		recursive_optimize(depth + 1, vars_index + 1, value_found, vars);
-		num_operations--;
 	}
-	if (depth == 0)
+	if (depth == 1 && my_operations[0].var0_index == vars_index - 2)
 	{
 		auto duration = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start);
-		std::cout << std::format("Completion {:3}% {:02}:{:02}\n", 100 / (std::size(binary_op) + 1), duration.count() / 60, duration.count() % 60);
+		uint32_t num_operations = std::size(binary_op) + 1;
+		std::cout << std::format("Completion {:3}% {:02}:{:02}\n", (1 + my_operations[0].op_index * num_operations) * 100 / num_operations / num_operations, duration.count() / 60, duration.count() % 60);
 	}
 	// Binary operation
 	for (uint32_t op_index = 0; op_index < std::size(binary_op); op_index++)
 	{
+		my_operations[depth].op_index = op_index + 1;
+
 		if (is_binary_op_symetric[op_index])
 		{
 			for (uint32_t i = 0; i < vars_index; i++)
 				// Use symetry for symetric boolean operators
 				for (uint32_t j = i + 1; j < vars_index; j++)
 				{
-					my_operations[num_operations] = operation(op_index + 1, i, j);
-					num_operations++;
+					my_operations[depth].var0_index = i;
+					my_operations[depth].var1_index = j;
 					vars[vars_index] = binary_op[op_index](vars[i], vars[j]);
 					recursive_optimize(depth + 1, vars_index + 1, value_found, vars);
-					num_operations--;
 				}
 		}
 		else
@@ -117,18 +118,18 @@ static void recursive_optimize(uint32_t depth, uint32_t vars_index, uint32_t val
 				// Use symetry for symetric boolean operators
 				for (uint32_t j = 0; j < vars_index; j++)
 				{
-					my_operations[num_operations] = operation(op_index + 1, i, j);
-					num_operations++;
+					my_operations[depth].var0_index = i;
+					my_operations[depth].var1_index = j;
 					vars[vars_index] = binary_op[op_index](vars[i], vars[j]);
 					recursive_optimize(depth + 1, vars_index + 1, value_found, vars);
-					num_operations--;
 				}
 		}
 
-		if (depth == 0)
+		if (depth == 1 && my_operations[0].var0_index == vars_index - 3 && my_operations[0].var1_index == vars_index - 2)
 		{
 			auto duration = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start);
-			std::cout << std::format("Completion {:3}% {:02}:{:02}\n", 100 * (op_index + 2) / (std::size(binary_op) + 1), duration.count() / 60, duration.count() % 60);
+			uint32_t num_operations = std::size(binary_op) + 1;
+			std::cout << std::format("Completion {:3}% {:02}:{:02}\n", (op_index + 2 + my_operations[0].op_index * num_operations) * 100 / num_operations / num_operations, duration.count() / 60, duration.count() % 60);
 		}
 	}
 }
@@ -180,7 +181,6 @@ static void optimize() noexcept
 		is_binary_op_symetric[i] = binary_op[i](VAR_TRUTH_TABLE[0], VAR_TRUTH_TABLE[1]) == binary_op[i](VAR_TRUTH_TABLE[1], VAR_TRUTH_TABLE[0]);
 
 	// Optimize
-	num_operations = 0;
 	recursive_optimize(0, num_function_params, 0, vars);
 
 	// Delete repeated solutions
@@ -211,7 +211,6 @@ static void optimize() noexcept
 		}
 	}
 
-	//int s = std::accumulate(good_solution.cbegin(), good_solution.cend(), 0);
 	// Show
 	for (size_t i = 0; i < found.size(); i++)
 		if (good_solution[i])
