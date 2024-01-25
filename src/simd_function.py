@@ -538,7 +538,7 @@ class Function:
     def get_includes(self, includes: set[str]):
         for target in self.targets:
             match target:
-                case Target.PLAIN_C: includes.add('stdint.h')
+                case Target.PLAIN_C: includes.add('stdint.h'); includes.add('stdlib.h')
                 case Target.SSE2_INTRINSICS: includes.add('emmintrin.h')
                 case Target.AVX_INTRINSICS: includes.add('immintrin.h')
                 case Target.AVX2_INTRINSICS: includes.add('immintrin.h')
@@ -692,7 +692,7 @@ class Function:
             match target:
                 case Target.PLAIN_C | Target.SSE2_INTRINSICS | Target.AVX_INTRINSICS | Target.AVX2_INTRINSICS:
                     output.write(f'{get_type(self.result_type, target)} {self.name}_{target.name}{self.__get_params_definition(target)}')
-                    output.write(' {\n')
+                    output.write('\n{\n')
                 case Target.MASM64_AVX | Target.MASM64_AVX2:
                     x64_abi_params = ['rcx', 'rdx', 'r8', 'r9']
                     
