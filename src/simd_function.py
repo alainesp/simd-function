@@ -110,6 +110,7 @@ from _ctypes import sizeof
 class Instruction:
     result: 'Variable'
     line_number: int
+    is_nope: bool = False
     
     def generate_code(self, target: Target, instruction_by_tmp: dict['Variable', 'Instruction']):
         raise NotImplementedError
@@ -121,7 +122,7 @@ class Instruction:
 def get_expresion(tmp: 'int | float | Variable', target: Target, instruction_by_tmp: dict['Variable', Instruction]) -> str:
     if isinstance(tmp, int) or isinstance(tmp, float):
         return f'{tmp}'
-    if target == Target.PLAIN_C and tmp.is_constant:
+    if target == Target.PLAIN_C and isinstance(tmp, Variable) and tmp.is_constant:
         return f'{hex(tmp.constant_value)}'
     if not tmp.is_tmp():
         return tmp.name
@@ -269,10 +270,13 @@ class BinaryInstruction(Instruction):
             constants.add(self.operand1)
             self.operand1 = Vector(self.operand1.c_type, True, self.operand1, is_uninitialize=False)
             self.operand1.name = f'const_{hex(self.operand1.constant_value)}'
-        elif self.operand1.is_constant:
+        elif isinstance(self.operand1, Variable) and self.operand1.is_constant:
             constants.add(self.operand1.constant_value)
             self.operand1.name = f'const_{hex(self.operand1.constant_value)}'
             
+        if isinstance(self.operand1, MemoryArray):
+            return
+        
         if isinstance(self.operand2, int) or isinstance(self.operand2, float):
             constants.add(self.operand2)
             self.operand2 = Vector(self.operand1.c_type, True, self.operand2, is_uninitialize=False)
@@ -288,6 +292,7 @@ class BinaryInstruction(Instruction):
         return (get_expresion(self.operand1, target, instruction_by_tmp), get_expresion(self.operand2, target, instruction_by_tmp))
     
     def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
+        if self.is_nope: return ''
         operand1_expression, operand2_expression = self.get_expresions(target, instruction_by_tmp)
         
         if target == Target.MASM64_AVX or target == Target.MASM64_AVX2:
@@ -303,7 +308,8 @@ class BinaryInstruction(Instruction):
             
             return f'{self.get_call(target)}    {self.result.name}, {operand1_expression}, {operand2_expression}\n'
         else:
-            if self.c_operator and (target == Target.PLAIN_C or (isinstance(self.operand1, Scalar) and (isinstance(self.operand2, Scalar) or isinstance(self.operand2, int)))):
+            if self.c_operator and (target == Target.PLAIN_C or (isinstance(self.operand1, Scalar) and (isinstance(self.operand2, Scalar) or isinstance(self.operand2, int))) \
+                or isinstance(self.operand1, MemoryArray)):
                 if self.result.is_tmp():
                     return f'({operand1_expression} {self.c_operator} {operand2_expression})'
                 else:
@@ -467,6 +473,38 @@ ENDM
             case _: raise NotImplementedError
            
 
+class RepeatInstruction(Instruction):
+    count: int
+    is_close: bool
+    
+    def __init__(self, count: int, is_close: bool) -> None:
+        super().__init__(None, get_line_number())
+        self.count = count
+        self.is_close = is_close
+        if is_close:
+            self.line_number = defined_functions[-1].instructions[-1].line_number + 1
+    
+    def generate_code(self, target: Target, instruction_by_tmp: dict['Variable', 'Instruction']) -> str:
+        if self.is_nope: return ''
+        
+        match target:
+            case Target.PLAIN_C | Target.SSE2_INTRINSICS | Target.AVX_INTRINSICS | Target.AVX2_INTRINSICS:
+                if self.is_close:
+                    return '}\n'
+                else:
+                    return f'for (int i = 0; i < {self.count}; i++) ' + '{'
+            case _: raise NotImplementedError
+
+@dataclass
+class Repeat:
+    count: int
+    
+    def __enter__(self):
+        defined_functions[-1].instructions.append(RepeatInstruction(self.count, False))
+    
+    def __exit__(self, exception_type, exception_value, traceback):
+        defined_functions[-1].instructions.append(RepeatInstruction(self.count, True))
+    
 ##################################################################################
 # SIMD function
 ##################################################################################
@@ -660,12 +698,15 @@ class Function:
                 self.instructions = deepcopy(old_instructions) if target != Target.PLAIN_C else self.instructions_with_rot
             elif parallel_factor == 2:
                 for ins0, ins1 in zip(deepcopy(old_instructions), deepcopy(old_instructions)):
+                    if isinstance(ins0, RepeatInstruction): ins1.is_nope = True
                     self.instructions += [ins0, ins1]
             elif parallel_factor == 3:
                 for ins0, ins1, ins2 in zip(deepcopy(old_instructions), deepcopy(old_instructions), deepcopy(old_instructions)):
+                    if isinstance(ins0, RepeatInstruction): ins1.is_nope = True; ins2.is_nope = True
                     self.instructions += [ins0, ins1, ins2]
             elif parallel_factor == 4:
                 for ins0, ins1, ins2, ins3 in zip(deepcopy(old_instructions), deepcopy(old_instructions), deepcopy(old_instructions), deepcopy(old_instructions)):
+                    if isinstance(ins0, RepeatInstruction): ins1.is_nope = True; ins2.is_nope = True; ins3.is_nope = True
                     self.instructions += [ins0, ins1, ins2, ins3]
             else:
                 raise NotImplementedError
@@ -674,8 +715,13 @@ class Function:
                 for i in range(0, len(self.instructions), parallel_factor):
                     # Variables
                     if self.instructions[i].result and self.instructions[i].result.name:
-                        for p in range(parallel_factor):
-                            self.instructions[i + p].result.name += f'{p}'
+                        if isinstance(self.instructions[i].result, MemoryArray):
+                            self.instructions[i].operand2 *= parallel_factor
+                            for p in range(1, parallel_factor):
+                                self.instructions[i + p].is_nope = True
+                        else:
+                            for p in range(parallel_factor):
+                                self.instructions[i + p].result.name += f'{p}'
                     # Memory access
                     if isinstance(self.instructions[i], LoadInstruction) or isinstance(self.instructions[i], StoreInstruction):
                         for p in range(parallel_factor):
@@ -693,6 +739,21 @@ class Function:
                 case Target.PLAIN_C | Target.SSE2_INTRINSICS | Target.AVX_INTRINSICS | Target.AVX2_INTRINSICS:
                     output.write(f'{get_type(self.result_type, target)} {self.name}_{target.name}{self.__get_params_definition(target)}')
                     output.write('\n{\n')
+                    
+                    last_type: str = ''
+                    variable_names = set()
+                    param_names = set([arg.name for arg in self.params])
+                    for instruction in self.instructions:
+                        if instruction.result and instruction.result.name and instruction.result.name not in variable_names and instruction.result.name not in param_names:
+                            variable_names.add(instruction.result.name)
+                            new_type: str = get_type(instruction.result, target)
+                            if new_type == last_type:
+                                output.write(f', {instruction.result.name}')
+                            else:
+                                output.write(f'{";\n" if last_type else ""}\t{new_type} {instruction.result.name}')
+                                last_type = new_type
+                    output.write(';\n\n')
+                    
                 case Target.MASM64_AVX | Target.MASM64_AVX2:
                     x64_abi_params = ['rcx', 'rdx', 'r8', 'r9']
                     
@@ -718,23 +779,28 @@ class Function:
             for arg in self.params:
                 variable_names.add(arg.name)
             # Define params and variables
-            if target == Target.MASM64_AVX or target == Target.MASM64_AVX2:
-                for instruction in self.instructions:
-                    if instruction.result and instruction.result.name not in variable_names:
-                        variable_names.add(instruction.result.name)
+            for instruction in self.instructions:
+                if instruction.result and instruction.result.name not in variable_names:
+                    variable_names.add(instruction.result.name)
             
             # Function body
             current_line = self.line_function_definition + 1
             comment_index = 0
-            while comments[comment_index].line <= current_line:
+            while comments[comment_index].line < current_line:
                 comment_index += 1
             
+            tabulation = '\t'
             for instruction in self.instructions:
-                if isinstance(instruction, StoreInstruction) or isinstance(instruction, ReturnInstruction) or not instruction.result.is_tmp():
+                if instruction.is_nope: continue
+                
+                if isinstance(instruction, RepeatInstruction) and instruction.is_close:
+                    tabulation = tabulation.removesuffix('\t')
+                    
+                if isinstance(instruction, StoreInstruction) or isinstance(instruction, ReturnInstruction) or isinstance(instruction, RepeatInstruction) or not instruction.result.is_tmp():
                     # Write comments
                     if instruction.line_number > comments[comment_index].line:
                         output.write('\n'*(comments[comment_index].line - current_line))
-                        output.write(f'\t{comments[comment_index].comment}')
+                        output.write(f'{tabulation}{comments[comment_index].comment}')
                         current_line = comments[comment_index].line + 1
                         comment_index += 1
                         
@@ -744,11 +810,14 @@ class Function:
                     output.write('\n'*(instruction.line_number - current_line))
                     current_line = instruction.line_number
                     # Instruction
-                    output.write('\t')
+                    output.write(tabulation)
                     if instruction.result and instruction.result.name not in variable_names:
                         output.write(f'{get_type(instruction.result, target)} ')
                         variable_names.add(instruction.result.name)
                     output.write(instruction.generate_code(target, instruction_by_tmp))
+                    
+                if isinstance(instruction, RepeatInstruction) and not instruction.is_close:
+                    tabulation += '\t'
             
             # Close function definition
             match target:
@@ -1132,23 +1201,6 @@ class Variable:
     # !=	__ne__(self, other)
     
     ########################################################################
-    # Assignment Operators
-    ########################################################################
-    # Operator	Magic Method
-    # -=	__isub__(self, other)
-    # +=	__iadd__(self, other)
-    # *=	__imul__(self, other)
-    # /=	__idiv__(self, other)
-    # //=	__ifloordiv__(self, other)
-    # %=	__imod__(self, other)
-    # **=	__ipow__(self, other)
-    # >>=	__irshift__(self, other)
-    # <<=	__ilshift__(self, other)
-    # &=	__iand__(self, other)
-    # |=	__ior__(self, other)
-    # ^=	__ixor__(self, other)
-    
-    ########################################################################
     # Unary Operators
     ########################################################################
     # Operator	Magic Method
@@ -1180,11 +1232,17 @@ def rotl(op1: int | Scalar | Vector, op2: int | Scalar | Vector) -> int | Scalar
     
     return op1.rotl(op2)
     
-@dataclass
 class MemoryArray:
     c_type: ctype
     num_elems: int
     name: str = ''
+    
+    def __init__(self, c_type: ctype, num_elems: int):
+        self.c_type = c_type
+        self.num_elems = num_elems
+        
+    def is_tmp(self) -> bool:
+        return not self.name
     
     def checks(self, index):
         if not isinstance(index, int):
@@ -1220,6 +1278,20 @@ class MemoryArray:
         
         assert value.c_type == self.c_type
         defined_functions[-1].instructions.append(StoreInstruction(operand=value, memory=self, index=index))
+        
+    def __add__(self, other):
+        self.find_name()
+        if not isinstance(other, int) and not isinstance(other, Scalar):
+            raise TypeError    
+        defined_functions[-1].instructions.append(AddInstruction(self, self, other))
+        return self
+        
+    def __sub__(self, other):
+        self.find_name()
+        if not isinstance(other, int) and not isinstance(other, Scalar):
+            raise TypeError    
+        defined_functions[-1].instructions.append(SubInstruction(self, self, other))
+        return self
         
 class VectorMemoryArray(MemoryArray):
     alignment: int = 64

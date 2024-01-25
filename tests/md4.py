@@ -20,39 +20,45 @@ SQRT_3 = 0x6ed9eba1
 ## <param name="state">The md4 state</param>
 ## <param name="block">The message to compress</param>
 with Function(void)(state, block) as md4_block:
-    
+    # Load state
     a = state[0]
     b = state[1]
     c = state[2]
     d = state[3]
 
-    for i in range(0, 16, 4):
-        # Round 1
-        a += block[i+0]; t = c ^ d; t &= b; a += d ^ t; a = rotl(a, 3);
-        d += block[i+1]; t = b ^ c; t &= a; d += c ^ t; d = rotl(d, 7);
-        c += block[i+2]; t = a ^ b; t &= d; c += b ^ t; c = rotl(c, 11);
-        b += block[i+3]; t = d ^ a; t &= c; b += a ^ t; b = rotl(b, 19);
+    # Round 1
+    with Repeat(4):
+        a += block[0]; t = c ^ d; t &= b; a += d ^ t; a = rotl(a, 3);
+        d += block[1]; t = b ^ c; t &= a; d += c ^ t; d = rotl(d, 7);
+        c += block[2]; t = a ^ b; t &= d; c += b ^ t; c = rotl(c, 11);
+        b += block[3]; t = d ^ a; t &= c; b += a ^ t; b = rotl(b, 19);
+        block += 4
+    block -= 4 * 4
 
-    for i in range(0, 4):
-        # Round 2
-        a += block[i+ 0]; t = d | c; tt = c & d; a += SQRT_2; t &= b; a += t | tt; a = rotl(a, 3 );
-        d += block[i+ 4]; t = c | b; tt = b & c; d += SQRT_2; t &= a; d += t | tt; d = rotl(d, 5 );
-        c += block[i+ 8]; t = b | a; tt = a & b; c += SQRT_2; t &= d; c += t | tt; c = rotl(c, 9 );
-        b += block[i+12]; t = a | d; tt = d & a; b += SQRT_2; t &= c; b += t | tt; b = rotl(b, 13);
+     # Round 2
+    with Repeat(4):
+        a += block[ 0]; t = d | c; tt = c & d; a += SQRT_2; t &= b; a += t | tt; a = rotl(a, 3 );
+        d += block[ 4]; t = c | b; tt = b & c; d += SQRT_2; t &= a; d += t | tt; d = rotl(d, 5 );
+        c += block[ 8]; t = b | a; tt = a & b; c += SQRT_2; t &= d; c += t | tt; c = rotl(c, 9 );
+        b += block[12]; t = a | d; tt = d & a; b += SQRT_2; t &= c; b += t | tt; b = rotl(b, 13);
+        block += 1
+    block -= 4
 
+    # Round 3
     for i in [0, 2, 1, 3]:
-        # Round 3 
         a += block[i+ 0]; t = b ^ c; a += SQRT_3; a += t ^ d; a = rotl(a, 3 );
         d += block[i+ 8];            d += SQRT_3; d += t ^ a; d = rotl(d, 9 );
         c += block[i+ 4]; t = a ^ d; c += SQRT_3; c += t ^ b; c = rotl(c, 11);
         b += block[i+12];            b += SQRT_3; b += t ^ c; b = rotl(b, 15);
-
+        
+    # Save state
     state[0] += a;
     state[1] += b;
     state[2] += c;
     state[3] += d;
     
-md4_block.targets = [Target.PLAIN_C, Target.AVX2_INTRINSICS]
-md4_block.parallelization_factor[Target.AVX2_INTRINSICS] = 2
+md4_block.targets = [Target.PLAIN_C, Target.SSE2_INTRINSICS, Target.AVX2_INTRINSICS]
+md4_block.parallelization_factor[Target.SSE2_INTRINSICS] = 2
+md4_block.parallelization_factor[Target.AVX2_INTRINSICS] = 3
 #md4_block.parallelization_factor[Target.MASM64_AVX2] = 2
 generate_code()
