@@ -149,51 +149,51 @@ template<> SIMD_INLINE Vec512Double Set(const double   value) noexcept { return 
 // Load
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // SSE2
-static SIMD_INLINE Vec128Int    Load (const Vec128Int   * SIMD_RESTRICT   aligned) noexcept { return _mm_load_si128(aligned); }
-static SIMD_INLINE Vec128Float  Load (const Vec128Float * SIMD_RESTRICT   aligned) noexcept { return _mm_load_ps(reinterpret_cast<const float*>(aligned)); }
-static SIMD_INLINE Vec128Double Load (const Vec128Double* SIMD_RESTRICT   aligned) noexcept { return _mm_load_pd(reinterpret_cast<const double*>(aligned)); }
-static SIMD_INLINE Vec128Int    LoadU(const Vec128Int   * SIMD_RESTRICT unaligned) noexcept { return _mm_loadu_si128(unaligned); }
-static SIMD_INLINE Vec128Float  LoadU(const Vec128Float * SIMD_RESTRICT unaligned) noexcept { return _mm_loadu_ps(reinterpret_cast<const float*>(unaligned)); }
-static SIMD_INLINE Vec128Double LoadU(const Vec128Double* SIMD_RESTRICT unaligned) noexcept { return _mm_loadu_pd(reinterpret_cast<const double*>(unaligned)); }
+static SIMD_INLINE Vec128Int    load (const Vec128Int   * SIMD_RESTRICT   aligned) noexcept { return _mm_load_si128(aligned); }
+static SIMD_INLINE Vec128Float  load (const Vec128Float * SIMD_RESTRICT   aligned) noexcept { return _mm_load_ps(reinterpret_cast<const float*>(aligned)); }
+static SIMD_INLINE Vec128Double load (const Vec128Double* SIMD_RESTRICT   aligned) noexcept { return _mm_load_pd(reinterpret_cast<const double*>(aligned)); }
+static SIMD_INLINE Vec128Int    loadu(const Vec128Int   * SIMD_RESTRICT unaligned) noexcept { return _mm_loadu_si128(unaligned); }
+static SIMD_INLINE Vec128Float  loadu(const Vec128Float * SIMD_RESTRICT unaligned) noexcept { return _mm_loadu_ps(reinterpret_cast<const float*>(unaligned)); }
+static SIMD_INLINE Vec128Double loadu(const Vec128Double* SIMD_RESTRICT unaligned) noexcept { return _mm_loadu_pd(reinterpret_cast<const double*>(unaligned)); }
 // AVX/AVX2
-static SIMD_INLINE Vec256Int    Load (const Vec256Int   * SIMD_RESTRICT   aligned) noexcept { return _mm256_load_si256(aligned); }
-static SIMD_INLINE Vec256Float  Load (const Vec256Float * SIMD_RESTRICT   aligned) noexcept { return _mm256_load_ps(reinterpret_cast<const float*>(aligned)); }
-static SIMD_INLINE Vec256Double Load (const Vec256Double* SIMD_RESTRICT   aligned) noexcept { return _mm256_load_pd(reinterpret_cast<const double*>(aligned)); }
-static SIMD_INLINE Vec256Int    LoadU(const Vec256Int   * SIMD_RESTRICT unaligned) noexcept { return _mm256_loadu_si256(unaligned); }
-static SIMD_INLINE Vec256Float  LoadU(const Vec256Float * SIMD_RESTRICT unaligned) noexcept { return _mm256_loadu_ps(reinterpret_cast<const float*>(unaligned)); }
-static SIMD_INLINE Vec256Double LoadU(const Vec256Double* SIMD_RESTRICT unaligned) noexcept { return _mm256_loadu_pd(reinterpret_cast<const double*>(unaligned)); }
+static SIMD_INLINE Vec256Int    load (const Vec256Int   * SIMD_RESTRICT   aligned) noexcept { return _mm256_load_si256(aligned); }
+static SIMD_INLINE Vec256Float  load (const Vec256Float * SIMD_RESTRICT   aligned) noexcept { return _mm256_load_ps(reinterpret_cast<const float*>(aligned)); }
+static SIMD_INLINE Vec256Double load (const Vec256Double* SIMD_RESTRICT   aligned) noexcept { return _mm256_load_pd(reinterpret_cast<const double*>(aligned)); }
+static SIMD_INLINE Vec256Int    loadu(const Vec256Int   * SIMD_RESTRICT unaligned) noexcept { return _mm256_loadu_si256(unaligned); }
+static SIMD_INLINE Vec256Float  loadu(const Vec256Float * SIMD_RESTRICT unaligned) noexcept { return _mm256_loadu_ps(reinterpret_cast<const float*>(unaligned)); }
+static SIMD_INLINE Vec256Double loadu(const Vec256Double* SIMD_RESTRICT unaligned) noexcept { return _mm256_loadu_pd(reinterpret_cast<const double*>(unaligned)); }
 // AVX512
-static SIMD_INLINE Vec512Int    Load (const Vec512Int   * SIMD_RESTRICT   aligned) noexcept { return _mm512_load_si512 (  aligned); }
-static SIMD_INLINE Vec512Float  Load (const Vec512Float * SIMD_RESTRICT   aligned) noexcept { return _mm512_load_ps    (  aligned); }
-static SIMD_INLINE Vec512Double Load (const Vec512Double* SIMD_RESTRICT   aligned) noexcept { return _mm512_load_pd    (  aligned); }
-static SIMD_INLINE Vec512Int    LoadU(const Vec512Int   * SIMD_RESTRICT unaligned) noexcept { return _mm512_loadu_si512(unaligned); }
-static SIMD_INLINE Vec512Float  LoadU(const Vec512Float * SIMD_RESTRICT unaligned) noexcept { return _mm512_loadu_ps   (unaligned); }
-static SIMD_INLINE Vec512Double LoadU(const Vec512Double* SIMD_RESTRICT unaligned) noexcept { return _mm512_loadu_pd   (unaligned ); }
+static SIMD_INLINE Vec512Int    load (const Vec512Int   * SIMD_RESTRICT   aligned) noexcept { return _mm512_load_si512 (  aligned); }
+static SIMD_INLINE Vec512Float  load (const Vec512Float * SIMD_RESTRICT   aligned) noexcept { return _mm512_load_ps    (  aligned); }
+static SIMD_INLINE Vec512Double load (const Vec512Double* SIMD_RESTRICT   aligned) noexcept { return _mm512_load_pd    (  aligned); }
+static SIMD_INLINE Vec512Int    loadu(const Vec512Int   * SIMD_RESTRICT unaligned) noexcept { return _mm512_loadu_si512(unaligned); }
+static SIMD_INLINE Vec512Float  loadu(const Vec512Float * SIMD_RESTRICT unaligned) noexcept { return _mm512_loadu_ps   (unaligned); }
+static SIMD_INLINE Vec512Double loadu(const Vec512Double* SIMD_RESTRICT unaligned) noexcept { return _mm512_loadu_pd   (unaligned ); }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Store
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // SSE2
-static SIMD_INLINE void Store (Vec128Int   * SIMD_RESTRICT   aligned, const Vec128Int    v) noexcept { _mm_store_si128(aligned, v); }
-static SIMD_INLINE void Store (Vec128Float * SIMD_RESTRICT   aligned, const Vec128Float  v) noexcept { _mm_store_ps(reinterpret_cast<float*>(aligned) , v); }
-static SIMD_INLINE void Store (Vec128Double* SIMD_RESTRICT   aligned, const Vec128Double v) noexcept { _mm_store_pd(reinterpret_cast<double*>(aligned), v); }
-static SIMD_INLINE void StoreU(Vec128Int   * SIMD_RESTRICT unaligned, const Vec128Int    v) noexcept { _mm_storeu_si128(unaligned, v); }
-static SIMD_INLINE void StoreU(Vec128Float * SIMD_RESTRICT unaligned, const Vec128Float  v) noexcept { _mm_storeu_ps(reinterpret_cast<float*>(unaligned) , v) ; }
-static SIMD_INLINE void StoreU(Vec128Double* SIMD_RESTRICT unaligned, const Vec128Double v) noexcept { _mm_storeu_pd(reinterpret_cast<double*>(unaligned), v) ; }
+static SIMD_INLINE void store (Vec128Int   * SIMD_RESTRICT   aligned, const Vec128Int    v) noexcept { _mm_store_si128(aligned, v); }
+static SIMD_INLINE void store (Vec128Float * SIMD_RESTRICT   aligned, const Vec128Float  v) noexcept { _mm_store_ps(reinterpret_cast<float*>(aligned) , v); }
+static SIMD_INLINE void store (Vec128Double* SIMD_RESTRICT   aligned, const Vec128Double v) noexcept { _mm_store_pd(reinterpret_cast<double*>(aligned), v); }
+static SIMD_INLINE void storeu(Vec128Int   * SIMD_RESTRICT unaligned, const Vec128Int    v) noexcept { _mm_storeu_si128(unaligned, v); }
+static SIMD_INLINE void storeu(Vec128Float * SIMD_RESTRICT unaligned, const Vec128Float  v) noexcept { _mm_storeu_ps(reinterpret_cast<float*>(unaligned) , v) ; }
+static SIMD_INLINE void storeu(Vec128Double* SIMD_RESTRICT unaligned, const Vec128Double v) noexcept { _mm_storeu_pd(reinterpret_cast<double*>(unaligned), v) ; }
 // AVX/AVX2
-static SIMD_INLINE void Store (Vec256Int   * SIMD_RESTRICT   aligned, const Vec256Int    v) noexcept { _mm256_store_si256(aligned, v); }
-static SIMD_INLINE void Store (Vec256Float * SIMD_RESTRICT   aligned, const Vec256Float  v) noexcept { _mm256_store_ps(reinterpret_cast<float*>(aligned) , v); }
-static SIMD_INLINE void Store (Vec256Double* SIMD_RESTRICT   aligned, const Vec256Double v) noexcept { _mm256_store_pd(reinterpret_cast<double*>(aligned), v); }
-static SIMD_INLINE void StoreU(Vec256Int   * SIMD_RESTRICT unaligned, const Vec256Int    v) noexcept { _mm256_storeu_si256(unaligned, v); }
-static SIMD_INLINE void StoreU(Vec256Float * SIMD_RESTRICT unaligned, const Vec256Float  v) noexcept { _mm256_storeu_ps(reinterpret_cast<float*>(unaligned) , v); }
-static SIMD_INLINE void StoreU(Vec256Double* SIMD_RESTRICT unaligned, const Vec256Double v) noexcept { _mm256_storeu_pd(reinterpret_cast<double*>(unaligned), v); }
+static SIMD_INLINE void store (Vec256Int   * SIMD_RESTRICT   aligned, const Vec256Int    v) noexcept { _mm256_store_si256(aligned, v); }
+static SIMD_INLINE void store (Vec256Float * SIMD_RESTRICT   aligned, const Vec256Float  v) noexcept { _mm256_store_ps(reinterpret_cast<float*>(aligned) , v); }
+static SIMD_INLINE void store (Vec256Double* SIMD_RESTRICT   aligned, const Vec256Double v) noexcept { _mm256_store_pd(reinterpret_cast<double*>(aligned), v); }
+static SIMD_INLINE void storeu(Vec256Int   * SIMD_RESTRICT unaligned, const Vec256Int    v) noexcept { _mm256_storeu_si256(unaligned, v); }
+static SIMD_INLINE void storeu(Vec256Float * SIMD_RESTRICT unaligned, const Vec256Float  v) noexcept { _mm256_storeu_ps(reinterpret_cast<float*>(unaligned) , v); }
+static SIMD_INLINE void storeu(Vec256Double* SIMD_RESTRICT unaligned, const Vec256Double v) noexcept { _mm256_storeu_pd(reinterpret_cast<double*>(unaligned), v); }
 // AVX512
-static SIMD_INLINE void Store (Vec512Int   * SIMD_RESTRICT   aligned, const Vec512Int    v) noexcept { _mm512_store_si512 (  aligned, v); }
-static SIMD_INLINE void Store (Vec512Float * SIMD_RESTRICT   aligned, const Vec512Float  v) noexcept { _mm512_store_ps    (  aligned, v); }
-static SIMD_INLINE void Store (Vec512Double* SIMD_RESTRICT   aligned, const Vec512Double v) noexcept { _mm512_store_pd    (  aligned, v); }
-static SIMD_INLINE void StoreU(Vec512Int   * SIMD_RESTRICT unaligned, const Vec512Int    v) noexcept { _mm512_storeu_si512(unaligned, v); }
-static SIMD_INLINE void StoreU(Vec512Float * SIMD_RESTRICT unaligned, const Vec512Float  v) noexcept { _mm512_storeu_ps   (unaligned, v); }
-static SIMD_INLINE void StoreU(Vec512Double* SIMD_RESTRICT unaligned, const Vec512Double v) noexcept { _mm512_storeu_pd   (unaligned, v); }
+static SIMD_INLINE void store (Vec512Int   * SIMD_RESTRICT   aligned, const Vec512Int    v) noexcept { _mm512_store_si512 (  aligned, v); }
+static SIMD_INLINE void store (Vec512Float * SIMD_RESTRICT   aligned, const Vec512Float  v) noexcept { _mm512_store_ps    (  aligned, v); }
+static SIMD_INLINE void store (Vec512Double* SIMD_RESTRICT   aligned, const Vec512Double v) noexcept { _mm512_store_pd    (  aligned, v); }
+static SIMD_INLINE void storeu(Vec512Int   * SIMD_RESTRICT unaligned, const Vec512Int    v) noexcept { _mm512_storeu_si512(unaligned, v); }
+static SIMD_INLINE void storeu(Vec512Float * SIMD_RESTRICT unaligned, const Vec512Float  v) noexcept { _mm512_storeu_ps   (unaligned, v); }
+static SIMD_INLINE void storeu(Vec512Double* SIMD_RESTRICT unaligned, const Vec512Double v) noexcept { _mm512_storeu_pd   (unaligned, v); }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // And
@@ -270,29 +270,29 @@ template<class Vector, class T> static SIMD_INLINE Vector operator^=(Vector& a, 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Vector + Vector
 // SSE2
-static SIMD_INLINE Vec128Int operator+(const Vec128Int a, const Vec128Int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 1)      return _mm_add_epi8 (a, b);
-    else if constexpr (sizeof(SimdScalarType) == 2) return _mm_add_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm_add_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm_add_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec128Int operator+(const Vec128Int a, const Vec128Int b) noexcept {
+    if constexpr (sizeof(T) == 1)      return _mm_add_epi8 (a, b);
+    else if constexpr (sizeof(T) == 2) return _mm_add_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm_add_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm_add_epi64(a, b);
 }
 static SIMD_INLINE Vec128Float  operator+(const Vec128Float  a, const Vec128Float  b) noexcept { return _mm_add_ps(a, b); }
 static SIMD_INLINE Vec128Double operator+(const Vec128Double a, const Vec128Double b) noexcept { return _mm_add_pd(a, b); }
 // AVX/AVX2
-static SIMD_INLINE Vec256Int operator+(const Vec256Int a, const Vec256Int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 1)      return _mm256_add_epi8(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 2) return _mm256_add_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm256_add_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm256_add_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec256Int operator+(const Vec256Int a, const Vec256Int b) noexcept {
+    if constexpr (sizeof(T) == 1)      return _mm256_add_epi8(a, b);
+    else if constexpr (sizeof(T) == 2) return _mm256_add_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm256_add_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm256_add_epi64(a, b);
 }
 static SIMD_INLINE Vec256Float  operator+(const Vec256Float  a, const Vec256Float  b) noexcept { return _mm256_add_ps(a, b); }
 static SIMD_INLINE Vec256Double operator+(const Vec256Double a, const Vec256Double b) noexcept { return _mm256_add_pd(a, b); }
 // AVX512
-static SIMD_INLINE Vec512Int operator+(const Vec512Int a, const Vec512Int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 1)      return _mm512_add_epi8(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 2) return _mm512_add_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm512_add_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm512_add_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec512Int operator+(const Vec512Int a, const Vec512Int b) noexcept {
+    if constexpr (sizeof(T) == 1)      return _mm512_add_epi8(a, b);
+    else if constexpr (sizeof(T) == 2) return _mm512_add_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm512_add_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm512_add_epi64(a, b);
 }
 static SIMD_INLINE Vec512Float  operator+(const Vec512Float  a, const Vec512Float  b) noexcept { return _mm512_add_ps(a, b); }
 static SIMD_INLINE Vec512Double operator+(const Vec512Double a, const Vec512Double b) noexcept { return _mm512_add_pd(a, b); }
@@ -338,29 +338,29 @@ template<class Vector, class T> static SIMD_INLINE Vector operator+=(Vector& a, 
 // Substration
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // SSE2
-static SIMD_INLINE Vec128Int operator-(const Vec128Int a, const Vec128Int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 1)      return _mm_sub_epi8(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 2) return _mm_sub_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm_sub_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm_sub_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec128Int operator-(const Vec128Int a, const Vec128Int b) noexcept {
+    if constexpr (sizeof(T) == 1)      return _mm_sub_epi8(a, b);
+    else if constexpr (sizeof(T) == 2) return _mm_sub_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm_sub_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm_sub_epi64(a, b);
 }
 static SIMD_INLINE Vec128Float  operator-(const Vec128Float  a, const Vec128Float  b) noexcept { return _mm_sub_ps(a, b); }
 static SIMD_INLINE Vec128Double operator-(const Vec128Double a, const Vec128Double b) noexcept { return _mm_sub_pd(a, b); }
 // AVX/AVX2
-static SIMD_INLINE Vec256Int operator-(const Vec256Int a, const Vec256Int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 1)      return _mm256_sub_epi8(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 2) return _mm256_sub_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm256_sub_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm256_sub_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec256Int operator-(const Vec256Int a, const Vec256Int b) noexcept {
+    if constexpr (sizeof(T) == 1)      return _mm256_sub_epi8(a, b);
+    else if constexpr (sizeof(T) == 2) return _mm256_sub_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm256_sub_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm256_sub_epi64(a, b);
 }
 static SIMD_INLINE Vec256Float  operator-(const Vec256Float  a, const Vec256Float  b) noexcept { return _mm256_sub_ps(a, b); }
 static SIMD_INLINE Vec256Double operator-(const Vec256Double a, const Vec256Double b) noexcept { return _mm256_sub_pd(a, b); }
 // AVX512
-static SIMD_INLINE Vec512Int operator-(const Vec512Int a, const Vec512Int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 1)      return _mm512_sub_epi8(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 2) return _mm512_sub_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm512_sub_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm512_sub_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec512Int operator-(const Vec512Int a, const Vec512Int b) noexcept {
+    if constexpr (sizeof(T) == 1)      return _mm512_sub_epi8(a, b);
+    else if constexpr (sizeof(T) == 2) return _mm512_sub_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm512_sub_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm512_sub_epi64(a, b);
 }
 static SIMD_INLINE Vec512Float  operator-(const Vec512Float  a, const Vec512Float  b) noexcept { return _mm512_sub_ps(a, b); }
 static SIMD_INLINE Vec512Double operator-(const Vec512Double a, const Vec512Double b) noexcept { return _mm512_sub_pd(a, b); }
@@ -371,24 +371,24 @@ template<class Vector, class T> static SIMD_INLINE Vector operator-=(Vector& a, 
 // Multiplication
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // SSE2
-static SIMD_INLINE Vec128Int operator*(const Vec128Int a, const Vec128Int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 2)      return _mm_mullo_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm_mullo_epi32(a, b);// highway gave a SSSE3 version
+template<class T = SimdScalarType> static SIMD_INLINE Vec128Int operator*(const Vec128Int a, const Vec128Int b) noexcept {
+    if constexpr (sizeof(T) == 2)      return _mm_mullo_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm_mullo_epi32(a, b);// highway gave a SSSE3 version
 }
 static SIMD_INLINE Vec128Float  operator*(const Vec128Float  a, const Vec128Float  b) noexcept { return _mm_mul_ps(a, b); }
 static SIMD_INLINE Vec128Double operator*(const Vec128Double a, const Vec128Double b) noexcept { return _mm_mul_pd(a, b); }
 // AVX/AVX2
-static SIMD_INLINE Vec256Int operator*(const Vec256Int a, const Vec256Int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 2)      return _mm256_mullo_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm256_mullo_epi32(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec256Int operator*(const Vec256Int a, const Vec256Int b) noexcept {
+    if constexpr (sizeof(T) == 2)      return _mm256_mullo_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm256_mullo_epi32(a, b);
 }
 static SIMD_INLINE Vec256Float  operator*(const Vec256Float  a, const Vec256Float  b) noexcept { return _mm256_mul_ps(a, b); }
 static SIMD_INLINE Vec256Double operator*(const Vec256Double a, const Vec256Double b) noexcept { return _mm256_mul_pd(a, b); }
 // AVX512
-static SIMD_INLINE Vec512Int operator*(const Vec512Int a, const Vec512Int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 2)      return _mm512_mullo_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm512_mullo_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm512_mullo_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec512Int operator*(const Vec512Int a, const Vec512Int b) noexcept {
+    if constexpr (sizeof(T) == 2)      return _mm512_mullo_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm512_mullo_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm512_mullo_epi64(a, b);
 }
 static SIMD_INLINE Vec512Float  operator*(const Vec512Float  a, const Vec512Float  b) noexcept { return _mm512_mul_ps(a, b); }
 static SIMD_INLINE Vec512Double operator*(const Vec512Double a, const Vec512Double b) noexcept { return _mm512_mul_pd(a, b); }
@@ -415,82 +415,82 @@ template<class Vector, class T> static SIMD_INLINE Vector operator/=(Vector& a, 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Vector << Vector
 // SSE2
-static SIMD_INLINE Vec128Int operator<<(const Vec128Int a, const Vec128Int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 2)      return _mm_sll_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm_sll_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm_sll_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec128Int operator<<(const Vec128Int a, const Vec128Int b) noexcept {
+    if constexpr (sizeof(T) == 2)      return _mm_sll_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm_sll_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm_sll_epi64(a, b);
 }
 // AVX/AVX2
-static SIMD_INLINE Vec256Int operator<<(const Vec256Int a, const Vec128Int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 2)      return _mm256_sll_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm256_sll_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm256_sll_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec256Int operator<<(const Vec256Int a, const Vec128Int b) noexcept {
+    if constexpr (sizeof(T) == 2)      return _mm256_sll_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm256_sll_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm256_sll_epi64(a, b);
 }
 // AVX512
-static SIMD_INLINE Vec512Int operator<<(const Vec512Int a, const Vec128Int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 2)      return _mm512_sll_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm512_sll_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm512_sll_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec512Int operator<<(const Vec512Int a, const Vec128Int b) noexcept {
+    if constexpr (sizeof(T) == 2)      return _mm512_sll_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm512_sll_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm512_sll_epi64(a, b);
 }
 
 // Vector << int
 // SSE2
-static SIMD_INLINE Vec128Int operator<<(const Vec128Int a, const int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 2)      return _mm_slli_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm_slli_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm_slli_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec128Int operator<<(const Vec128Int a, const int b) noexcept {
+    if constexpr (sizeof(T) == 2)      return _mm_slli_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm_slli_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm_slli_epi64(a, b);
 }
 // AVX/AVX2
-static SIMD_INLINE Vec256Int operator<<(const Vec256Int a, const int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 2)      return _mm256_slli_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm256_slli_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm256_slli_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec256Int operator<<(const Vec256Int a, const int b) noexcept {
+    if constexpr (sizeof(T) == 2)      return _mm256_slli_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm256_slli_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm256_slli_epi64(a, b);
 }
 // AVX512
-static SIMD_INLINE Vec512Int operator<<(const Vec512Int a, const int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 2)      return _mm512_slli_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm512_slli_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm512_slli_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec512Int operator<<(const Vec512Int a, const int b) noexcept {
+    if constexpr (sizeof(T) == 2)      return _mm512_slli_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm512_slli_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm512_slli_epi64(a, b);
 }
 
 // Vector >> Vector
 // SSE2
-static SIMD_INLINE Vec128Int operator>>(const Vec128Int a, const Vec128Int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 2)      return _mm_srl_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm_srl_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm_srl_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec128Int operator>>(const Vec128Int a, const Vec128Int b) noexcept {
+    if constexpr (sizeof(T) == 2)      return _mm_srl_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm_srl_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm_srl_epi64(a, b);
 }
 // AVX/AVX2
-static SIMD_INLINE Vec256Int operator>>(const Vec256Int a, const Vec128Int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 2)      return _mm256_srl_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm256_srl_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm256_srl_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec256Int operator>>(const Vec256Int a, const Vec128Int b) noexcept {
+    if constexpr (sizeof(T) == 2)      return _mm256_srl_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm256_srl_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm256_srl_epi64(a, b);
 }
 // AVX512
-static SIMD_INLINE Vec512Int operator>>(const Vec512Int a, const Vec128Int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 2)      return _mm512_srl_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm512_srl_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm512_srl_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec512Int operator>>(const Vec512Int a, const Vec128Int b) noexcept {
+    if constexpr (sizeof(T) == 2)      return _mm512_srl_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm512_srl_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm512_srl_epi64(a, b);
 }
 
 // Vector >> int
 // SSE2
-static SIMD_INLINE Vec128Int operator>>(const Vec128Int a, const int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 2)      return _mm_srli_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm_srli_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm_srli_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec128Int operator>>(const Vec128Int a, const int b) noexcept {
+    if constexpr (sizeof(T) == 2)      return _mm_srli_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm_srli_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm_srli_epi64(a, b);
 }
 // AVX/AVX2
-static SIMD_INLINE Vec256Int operator>>(const Vec256Int a, const int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 2)      return _mm256_srli_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm256_srli_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm256_srli_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec256Int operator>>(const Vec256Int a, const int b) noexcept {
+    if constexpr (sizeof(T) == 2)      return _mm256_srli_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm256_srli_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm256_srli_epi64(a, b);
 }
 // AVX512
-static SIMD_INLINE Vec512Int operator>>(const Vec512Int a, const int b) noexcept {
-    if constexpr (sizeof(SimdScalarType) == 2)      return _mm512_srli_epi16(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 4) return _mm512_srli_epi32(a, b);
-    else if constexpr (sizeof(SimdScalarType) == 8) return _mm512_srli_epi64(a, b);
+template<class T = SimdScalarType> static SIMD_INLINE Vec512Int operator>>(const Vec512Int a, const int b) noexcept {
+    if constexpr (sizeof(T) == 2)      return _mm512_srli_epi16(a, b);
+    else if constexpr (sizeof(T) == 4) return _mm512_srli_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm512_srli_epi64(a, b);
 }
 
 // Vector <<= T, Vector >>= T
@@ -498,7 +498,7 @@ template<class Vector, class T> static SIMD_INLINE Vector operator<<=(Vector& a,
 template<class Vector, class T> static SIMD_INLINE Vector operator>>=(Vector& a, const T b) noexcept { return (a = a >> b); }
 
 // Rotation
-template<class Vector> static SIMD_INLINE Vector rotl(const Vector a, const int b) noexcept { return (a << b) | (a >> (sizeof(SimdScalarType) * 8 - b)); }
-template<class Vector> static SIMD_INLINE Vector rotr(const Vector a, const int b) noexcept { return (a >> b) | (a << (sizeof(SimdScalarType) * 8 - b)); }
+template<class Vector, class T = SimdScalarType> static SIMD_INLINE Vector rotl(const Vector a, const int b) noexcept { return (a << b) | (a >> (sizeof(T) * 8 - b)); }
+template<class Vector, class T = SimdScalarType> static SIMD_INLINE Vector rotr(const Vector a, const int b) noexcept { return (a >> b) | (a << (sizeof(T) * 8 - b)); }
 
 }
