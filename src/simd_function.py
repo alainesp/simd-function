@@ -423,7 +423,11 @@ class RotlInstruction(BinaryInstruction):
        
     def get_call(self, target: Target) -> str:
         if target == Target.PLAIN_C or isinstance(self.operand1, Scalar):
-            return 'std::rotl'
+            if self.result.c_type == uint32_t:
+                return '_rotl'
+            elif self.result.c_type == uint64_t:
+                return '_rotl64'
+            
             
         raise NotImplementedError
            
@@ -468,20 +472,20 @@ def get_type(var: any, target: Target) -> str:
         match target:
             case Target.PLAIN_C: return retrieve_name(var.c_type)
             case Target.SSE2:
-                if var.c_type == float: return 'simd::Vec128Float'
-                if var.c_type == double: return 'simd::Vec128Double'
+                if var.c_type == float: return 'simd::Vec128f32'
+                if var.c_type == double: return 'simd::Vec128f64'
                 return f'simd::Vec128{retrieve_name(var.c_type)[0]}{sizeof(var.c_type) * 8}'
             case Target.AVX:
-                if var.c_type == float: return 'simd::Vec256Float'
-                if var.c_type == double: return 'simd::Vec256Double'
+                if var.c_type == float: return 'simd::Vec256f32'
+                if var.c_type == double: return 'simd::Vec256f64'
                 return f'simd::Vec128{retrieve_name(var.c_type)[0]}{sizeof(var.c_type) * 8}'
             case Target.AVX2:
-                if var.c_type == float: return 'simd::Vec256Float'
-                if var.c_type == double: return 'simd::Vec256Double'
+                if var.c_type == float: return 'simd::Vec256f32'
+                if var.c_type == double: return 'simd::Vec256f64'
                 return f'simd::Vec256{retrieve_name(var.c_type)[0]}{sizeof(var.c_type) * 8}'
             case Target.AVX512:
-                if var.c_type == float: return 'simd::Vec512Float'
-                if var.c_type == double: return 'simd::Vec512Double'
+                if var.c_type == float: return 'simd::Vec512f32'
+                if var.c_type == double: return 'simd::Vec512f64'
                 return f'simd::Vec512{retrieve_name(var.c_type)[0]}{sizeof(var.c_type) * 8}'
             
             case Target.MASM64_AVX : return '__m128' if var.c_type == float else ('__m128d' if var.c_type == double else '__m128i')
@@ -556,8 +560,9 @@ class Function:
         
         param_separator: str = ''
         for arg in self.params:
+            param_prefix = f'const ' if isinstance(arg, MemoryArray) and arg.is_const else ''
             param_suffix = f'[{arg.num_elems}]' if isinstance(arg, MemoryArray) else ''
-            result += f'{param_separator}{get_type(arg, target)} {arg.name}{param_suffix}'
+            result += f'{param_separator}{param_prefix}{get_type(arg, target)} {arg.name}{param_suffix}'
             param_separator = ', '
             
         return result + ')'
@@ -584,7 +589,7 @@ class Function:
                 for arg in self.params:
                     if isinstance(arg, VectorMemoryArray):       
                         arg.num_elems *= self.parallelization_factor[target]
-                output.write(f'{get_type(self.result_type, target)} {self.name}_{target.name.lower()}{self.__get_params_definition(target)};\n')
+                output.write(f'{get_type(self.result_type, target)} {self.name}_{target.name.lower()}{self.__get_params_definition(target)} noexcept;\n')
                 # Revert Parallelization
                 for arg in self.params:
                     if isinstance(arg, VectorMemoryArray):       
@@ -705,7 +710,7 @@ class Function:
             # Function signature
             match target:
                 case Target.PLAIN_C | Target.SSE2 | Target.AVX | Target.AVX2 | Target.AVX512:
-                    output.write(f'extern "C" {get_type(self.result_type, target)} {self.name}_{target.name.lower()}{self.__get_params_definition(target)}')
+                    output.write(f'extern "C" {get_type(self.result_type, target)} {self.name}_{target.name.lower()}{self.__get_params_definition(target)} noexcept')
                     output.write('\n{\n')
                     
                     last_type: str = ''
@@ -848,7 +853,6 @@ def generate_code_one_file(filename: str, targets: set[Target], comments: list[C
         output.write(
 '''#define SimdScalarType uint32_t
 #include "../src/simd.hpp"
-#include <bit>
 using namespace simd;
 ''')
         # Constants
@@ -1001,7 +1005,7 @@ gtest_discover_tests(runUnitTests)
 ###############################################################################################################
 # Benchmark
 ###############################################################################################################
-add_executable(runBenchmark benchmark.cpp md4.cpp md4.asm arch_x64.asm)
+add_executable(runBenchmark benchmark.cpp md4.cpp arch_x64.asm)
 set_property(TARGET runBenchmark PROPERTY CXX_STANDARD 20)	 # C++ language to use
 
 FetchContent_Declare(benchmark URL https://github.com/google/benchmark/archive/refs/tags/v1.8.3.zip)
@@ -1209,6 +1213,7 @@ class MemoryArray:
     c_type: ctype
     num_elems: int
     name: str = ''
+    is_const: bool = True
     
     def __init__(self, c_type: ctype, num_elems: int):
         self.c_type = c_type
@@ -1244,6 +1249,7 @@ class MemoryArray:
         return result
     
     def __setitem__(self, index, value):
+        self.is_const = False
         self.checks(index)
         self.find_name()
         if isinstance(value, Vector) or isinstance(value, Scalar):
