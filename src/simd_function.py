@@ -513,7 +513,7 @@ class Function:
     params: list['Variable | MemoryArray']
     instructions: list[Instruction]
     targets: list[Target]
-    parallelization_factor: dict[Target, int]
+    parallelization_factor: dict[Target, list[int]]
     exited: bool = False
     
     def __init__(self, result_type: ctype = void, targets: list[Target] = default_targets):
@@ -523,7 +523,7 @@ class Function:
         self.targets = targets
         self.parallelization_factor = {}
         for target in Target:
-            self.parallelization_factor[target] = 1
+            self.parallelization_factor[target] = [1]
     
     def __call__(self, *args):
         for arg in args:
@@ -585,15 +585,17 @@ class Function:
     def generate_code(self, output, comments: list[Comment], is_header: bool):
         if is_header:
             for target in self.targets:
-                # Parallelization
-                for arg in self.params:
-                    if isinstance(arg, VectorMemoryArray):       
-                        arg.num_elems *= self.parallelization_factor[target]
-                output.write(f'{get_type(self.result_type, target)} {self.name}_{target.name.lower()}{self.__get_params_definition(target)} noexcept;\n')
-                # Revert Parallelization
-                for arg in self.params:
-                    if isinstance(arg, VectorMemoryArray):       
-                        arg.num_elems //= self.parallelization_factor[target]            
+                for parallel_factor in self.parallelization_factor[target]:
+                    # Parallelization
+                    for arg in self.params:
+                        if isinstance(arg, VectorMemoryArray):       
+                            arg.num_elems *= parallel_factor
+                    parallel_suffix = '' if parallel_factor == 1 and len(self.parallelization_factor[target]) == 1 else f'_x{parallel_factor}'
+                    output.write(f'{get_type(self.result_type, target)} {self.name}_{target.name.lower()}{parallel_suffix}{self.__get_params_definition(target)} noexcept;\n')
+                    # Revert Parallelization
+                    for arg in self.params:
+                        if isinstance(arg, VectorMemoryArray):       
+                            arg.num_elems //= parallel_factor         
             return
         
         if not hasattr(self, 'instructions_with_rot'):
@@ -656,149 +658,150 @@ class Function:
         
         # Generate code for all targets
         for target in self.targets:
-            ########################################################################################
-            # Parallelization
-            ########################################################################################
-            parallel_factor = self.parallelization_factor[target]
-            # Params
-            self.params = deepcopy(old_params)
-            for arg in self.params:
-                if isinstance(arg, VectorMemoryArray):       
-                    arg.num_elems *= parallel_factor
-                    
-            self.instructions = [] 
-            if parallel_factor <= 1:
-                self.instructions = deepcopy(old_instructions) if target != Target.PLAIN_C else self.instructions_with_rot
-            elif parallel_factor == 2:
-                for ins0, ins1 in zip(deepcopy(old_instructions), deepcopy(old_instructions)):
-                    if isinstance(ins0, RepeatInstruction): ins1.is_nope = True
-                    self.instructions += [ins0, ins1]
-            elif parallel_factor == 3:
-                for ins0, ins1, ins2 in zip(deepcopy(old_instructions), deepcopy(old_instructions), deepcopy(old_instructions)):
-                    if isinstance(ins0, RepeatInstruction): ins1.is_nope = True; ins2.is_nope = True
-                    self.instructions += [ins0, ins1, ins2]
-            elif parallel_factor == 4:
-                for ins0, ins1, ins2, ins3 in zip(deepcopy(old_instructions), deepcopy(old_instructions), deepcopy(old_instructions), deepcopy(old_instructions)):
-                    if isinstance(ins0, RepeatInstruction): ins1.is_nope = True; ins2.is_nope = True; ins3.is_nope = True
-                    self.instructions += [ins0, ins1, ins2, ins3]
-            else:
-                raise NotImplementedError
-            
-            if parallel_factor > 1:
-                for i in range(0, len(self.instructions), parallel_factor):
-                    # Variables
-                    if self.instructions[i].result and self.instructions[i].result.name:
-                        if isinstance(self.instructions[i].result, MemoryArray):
-                            self.instructions[i].operand2 *= parallel_factor
-                            for p in range(1, parallel_factor):
-                                self.instructions[i + p].is_nope = True
-                        else:
-                            for p in range(parallel_factor):
-                                self.instructions[i + p].result.name += f'{p}'
-                    # Memory access
-                    if isinstance(self.instructions[i], LoadInstruction) or isinstance(self.instructions[i], StoreInstruction):
-                        for p in range(parallel_factor):
-                            self.instructions[i + p].index = self.instructions[i + p].index * parallel_factor + p
-            ########################################################################################
+            for parallel_factor in self.parallelization_factor[target]:
+                ########################################################################################
+                # Parallelization
+                ########################################################################################
+                # Params
+                self.params = deepcopy(old_params)
+                for arg in self.params:
+                    if isinstance(arg, VectorMemoryArray):       
+                        arg.num_elems *= parallel_factor
+                        
+                self.instructions = [] 
+                if parallel_factor <= 1:
+                    self.instructions = deepcopy(old_instructions) if target != Target.PLAIN_C else self.instructions_with_rot
+                elif parallel_factor == 2:
+                    for ins0, ins1 in zip(deepcopy(old_instructions), deepcopy(old_instructions)):
+                        if isinstance(ins0, RepeatInstruction): ins1.is_nope = True
+                        self.instructions += [ins0, ins1]
+                elif parallel_factor == 3:
+                    for ins0, ins1, ins2 in zip(deepcopy(old_instructions), deepcopy(old_instructions), deepcopy(old_instructions)):
+                        if isinstance(ins0, RepeatInstruction): ins1.is_nope = True; ins2.is_nope = True
+                        self.instructions += [ins0, ins1, ins2]
+                elif parallel_factor == 4:
+                    for ins0, ins1, ins2, ins3 in zip(deepcopy(old_instructions), deepcopy(old_instructions), deepcopy(old_instructions), deepcopy(old_instructions)):
+                        if isinstance(ins0, RepeatInstruction): ins1.is_nope = True; ins2.is_nope = True; ins3.is_nope = True
+                        self.instructions += [ins0, ins1, ins2, ins3]
+                else:
+                    raise NotImplementedError
                 
-            # Find the instruction by the result
-            instruction_by_tmp = {}
-            for instruction in self.instructions:
-                if not isinstance(instruction, StoreInstruction) and not isinstance(instruction, ReturnInstruction):
-                    instruction_by_tmp[instruction.result] = instruction
-                
-            # Function signature
-            match target:
-                case Target.PLAIN_C | Target.SSE2 | Target.AVX | Target.AVX2 | Target.AVX512:
-                    output.write(f'extern "C" {get_type(self.result_type, target)} {self.name}_{target.name.lower()}{self.__get_params_definition(target)} noexcept')
-                    output.write('\n{\n')
-                    
-                    last_type: str = ''
-                    variable_names = set()
-                    param_names = set([arg.name for arg in self.params])
-                    for instruction in self.instructions:
-                        if instruction.result and instruction.result.name and instruction.result.name not in variable_names and instruction.result.name not in param_names:
-                            variable_names.add(instruction.result.name)
-                            new_type: str = get_type(instruction.result, target)
-                            if new_type == last_type:
-                                output.write(f', {instruction.result.name}')
+                if parallel_factor > 1:
+                    for i in range(0, len(self.instructions), parallel_factor):
+                        # Variables
+                        if self.instructions[i].result and self.instructions[i].result.name:
+                            if isinstance(self.instructions[i].result, MemoryArray):
+                                self.instructions[i].operand2 *= parallel_factor
+                                for p in range(1, parallel_factor):
+                                    self.instructions[i + p].is_nope = True
                             else:
-                                output.write(f'{";\n" if last_type else ""}\t{new_type} {instruction.result.name}')
-                                last_type = new_type
-                    output.write(';\n\n')
+                                for p in range(parallel_factor):
+                                    self.instructions[i + p].result.name += f'{p}'
+                        # Memory access
+                        if isinstance(self.instructions[i], LoadInstruction) or isinstance(self.instructions[i], StoreInstruction):
+                            for p in range(parallel_factor):
+                                self.instructions[i + p].index = self.instructions[i + p].index * parallel_factor + p
+                ########################################################################################
                     
-                case Target.MASM64_AVX | Target.MASM64_AVX2:
-                    x64_abi_params = ['rcx', 'rdx', 'r8', 'r9']
+                # Find the instruction by the result
+                instruction_by_tmp = {}
+                for instruction in self.instructions:
+                    if not isinstance(instruction, StoreInstruction) and not isinstance(instruction, ReturnInstruction):
+                        instruction_by_tmp[instruction.result] = instruction
                     
-                    output.write(f'REG_BYTE_SIZE = {16 if target == Target.MASM64_AVX else 32}\n')
-                    # TODO Support this well
-                    for index,arg in enumerate(self.params):
-                        output.write(f'{arg.name} EQU {x64_abi_params[index]}\n')
+                # Function signature
+                match target:
+                    case Target.PLAIN_C | Target.SSE2 | Target.AVX | Target.AVX2 | Target.AVX512:
+                        parallel_suffix = '' if parallel_factor == 1 and len(self.parallelization_factor[target]) == 1 else f'_x{parallel_factor}'
+                        output.write(f'extern "C" {get_type(self.result_type, target)} {self.name}_{target.name.lower()}{parallel_suffix}{self.__get_params_definition(target)} noexcept')
+                        output.write('\n{\n')
                         
-                    x64_registers: list[str] = []
-                    for instruction in self.instructions:
-                        if instruction.result and instruction.result.name and instruction.result.name not in [reg_name for reg_name in x64_registers]:
-                            x64_registers.append(instruction.result.name)
-                    
-                    # TODO: Use registers depending on var type
-                    for index,var_name in enumerate(x64_registers):
-                        output.write(f'{var_name} EQU {get_reg_simd_name(target)}{index}\n')
+                        last_type: str = ''
+                        variable_names = set()
+                        param_names = set([arg.name for arg in self.params])
+                        for instruction in self.instructions:
+                            if instruction.result and instruction.result.name and instruction.result.name not in variable_names and instruction.result.name not in param_names:
+                                variable_names.add(instruction.result.name)
+                                new_type: str = get_type(instruction.result, target)
+                                if new_type == last_type:
+                                    output.write(f', {instruction.result.name}')
+                                else:
+                                    output.write(f'{";\n" if last_type else ""}\t{new_type} {instruction.result.name}')
+                                    last_type = new_type
+                        output.write(';\n\n')
                         
-                    # Function signature
-                    output.write(f'{self.name}_{target.name} PROC ;{self.__get_params_definition(target)} -> {get_type(self.result_type, target)}\n')
-                case _: raise NotImplementedError
-            
-            variable_names = set()
-            for arg in self.params:
-                variable_names.add(arg.name)
-            # Define params and variables
-            for instruction in self.instructions:
-                if instruction.result and instruction.result.name not in variable_names:
-                    variable_names.add(instruction.result.name)
-            
-            # Function body
-            current_line = self.line_function_definition + 1
-            comment_index = 0
-            while comments[comment_index].line < current_line:
-                comment_index += 1
-            
-            tabulation = '\t'
-            for instruction in self.instructions:
-                if instruction.is_nope: continue
+                    case Target.MASM64_AVX | Target.MASM64_AVX2:
+                        x64_abi_params = ['rcx', 'rdx', 'r8', 'r9']
+                        
+                        output.write(f'REG_BYTE_SIZE = {16 if target == Target.MASM64_AVX else 32}\n')
+                        # TODO Support this well
+                        for index,arg in enumerate(self.params):
+                            output.write(f'{arg.name} EQU {x64_abi_params[index]}\n')
+                            
+                        x64_registers: list[str] = []
+                        for instruction in self.instructions:
+                            if instruction.result and instruction.result.name and instruction.result.name not in [reg_name for reg_name in x64_registers]:
+                                x64_registers.append(instruction.result.name)
+                        
+                        # TODO: Use registers depending on var type
+                        for index,var_name in enumerate(x64_registers):
+                            output.write(f'{var_name} EQU {get_reg_simd_name(target)}{index}\n')
+                            
+                        # Function signature
+                        output.write(f'{self.name}_{target.name} PROC ;{self.__get_params_definition(target)} -> {get_type(self.result_type, target)}\n')
+                    case _: raise NotImplementedError
                 
-                if isinstance(instruction, RepeatInstruction) and instruction.is_close:
-                    tabulation = tabulation.removesuffix('\t')
-                    
-                if isinstance(instruction, StoreInstruction) or isinstance(instruction, ReturnInstruction) or isinstance(instruction, RepeatInstruction) or not instruction.result.is_tmp():
-                    # Write comments
-                    if instruction.line_number > comments[comment_index].line:
-                        output.write('\n'*(comments[comment_index].line - current_line))
-                        output.write(f'{tabulation}{comments[comment_index].comment}')
-                        current_line = comments[comment_index].line + 1
-                        comment_index += 1
-                        
-                    # Write line spaces
-                    if current_line > instruction.line_number: # Support cycles in Python
-                        current_line = instruction.line_number - 1
-                    output.write('\n'*(instruction.line_number - current_line))
-                    current_line = instruction.line_number
-                    # Instruction
-                    output.write(tabulation)
+                variable_names = set()
+                for arg in self.params:
+                    variable_names.add(arg.name)
+                # Define params and variables
+                for instruction in self.instructions:
                     if instruction.result and instruction.result.name not in variable_names:
-                        output.write(f'{get_type(instruction.result, target)} ')
                         variable_names.add(instruction.result.name)
-                    output.write(instruction.generate_code(target, instruction_by_tmp))
+                
+                # Function body
+                current_line = self.line_function_definition + 1
+                comment_index = 0
+                while comments[comment_index].line < current_line:
+                    comment_index += 1
+                
+                tabulation = '\t'
+                for instruction in self.instructions:
+                    if instruction.is_nope: continue
                     
-                if isinstance(instruction, RepeatInstruction) and not instruction.is_close:
-                    tabulation += '\t'
-            
-            # Close function definition
-            match target:
-                case Target.PLAIN_C | Target.SSE2 | Target.AVX | Target.AVX2 | Target.AVX512:          
-                    output.write('\n}\n\n')
-                case Target.MASM64_AVX | Target.MASM64_AVX2:
-                    output.write(f'\n\n\tvzeroupper\n\tRET\n{self.name}_{target.name} ENDP\n\n')
-                case _: raise NotImplementedError
+                    if isinstance(instruction, RepeatInstruction) and instruction.is_close:
+                        tabulation = tabulation.removesuffix('\t')
+                        
+                    if isinstance(instruction, StoreInstruction) or isinstance(instruction, ReturnInstruction) or isinstance(instruction, RepeatInstruction) or not instruction.result.is_tmp():
+                        # Write comments
+                        if instruction.line_number > comments[comment_index].line:
+                            output.write('\n'*(comments[comment_index].line - current_line))
+                            output.write(f'{tabulation}{comments[comment_index].comment}')
+                            current_line = comments[comment_index].line + 1
+                            comment_index += 1
+                            
+                        # Write line spaces
+                        if current_line > instruction.line_number: # Support cycles in Python
+                            current_line = instruction.line_number - 1
+                        output.write('\n'*(instruction.line_number - current_line))
+                        current_line = instruction.line_number
+                        # Instruction
+                        output.write(tabulation)
+                        if instruction.result and instruction.result.name not in variable_names:
+                            output.write(f'{get_type(instruction.result, target)} ')
+                            variable_names.add(instruction.result.name)
+                        output.write(instruction.generate_code(target, instruction_by_tmp))
+                        
+                    if isinstance(instruction, RepeatInstruction) and not instruction.is_close:
+                        tabulation += '\t'
+                
+                # Close function definition
+                match target:
+                    case Target.PLAIN_C | Target.SSE2 | Target.AVX | Target.AVX2 | Target.AVX512:          
+                        output.write('\n}\n\n')
+                    case Target.MASM64_AVX | Target.MASM64_AVX2:
+                        output.write(f'\n\n\tvzeroupper\n\tRET\n{self.name}_{target.name} ENDP\n\n')
+                    case _: raise NotImplementedError
                 
         self.instructions = old_instructions
         self.params = old_params
@@ -1022,26 +1025,29 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
             
             for func in defined_functions:
                 for target in func.targets:
-                    benchmark.write(f'static void BM_{func.name}_{target.name}(benchmark::State& _benchmark_state) ')
-                    benchmark.write('{\n')
-                    # Function params declaration
-                    for arg in func.params:
-                        param_suffix = f'[{arg.num_elems * (func.parallelization_factor[target] if isinstance(arg, VectorMemoryArray) else 1)}]' if isinstance(arg, MemoryArray) else ''
-                        benchmark.write(f'\t{get_type(arg, target)} {arg.name}{param_suffix};\n')
-                    
-                    benchmark.write('\tuint32_t num_calls = 0;\n')
-                    benchmark.write('\tfor (auto _ : _benchmark_state) {\n')
-                    benchmark.write(f'\t\t{func.name}_{target.name.lower()}(')
-                    param_separator: str = ''
-                    for arg in func.params:
-                        benchmark.write(f'{param_separator}{arg.name}')
-                        param_separator = ', '
-                    benchmark.write(');\n\t\tnum_calls++;\n\t}\n')
-                    benchmark.write(f'\t_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * {
-                        target_simd_size(target) * func.parallelization_factor[target]}, benchmark::Counter::kIsRate);\n')
-                    benchmark.write('}\n')
-                    # Register the function as a benchmark
-                    benchmark.write(f'BENCHMARK(BM_{func.name}_{target.name});\n\n')
+                    for parallel_factor in func.parallelization_factor[target]:
+                        parallel_suffix = '' if parallel_factor == 1 and len(func.parallelization_factor[target]) == 1 else f'_x{parallel_factor}'
+                        
+                        benchmark.write(f'static void BM_{func.name}_{target.name}{parallel_suffix}(benchmark::State& _benchmark_state) ')
+                        benchmark.write('{\n')
+                        # Function params declaration
+                        for arg in func.params:
+                            param_suffix = f'[{arg.num_elems * (parallel_factor if isinstance(arg, VectorMemoryArray) else 1)}]' if isinstance(arg, MemoryArray) else ''
+                            benchmark.write(f'\t{get_type(arg, target)} {arg.name}{param_suffix};\n')
+                        
+                        benchmark.write('\tuint32_t num_calls = 0;\n')
+                        benchmark.write('\tfor (auto _ : _benchmark_state) {\n')
+                        benchmark.write(f'\t\t{func.name}_{target.name.lower()}{parallel_suffix}(')
+                        param_separator: str = ''
+                        for arg in func.params:
+                            benchmark.write(f'{param_separator}{arg.name}')
+                            param_separator = ', '
+                        benchmark.write(');\n\t\tnum_calls++;\n\t}\n')
+                        benchmark.write(f'\t_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * {\
+                            target_simd_size(target) * parallel_factor}, benchmark::Counter::kIsRate);\n')
+                        benchmark.write('}\n')
+                        # Register the function as a benchmark
+                        benchmark.write(f'BENCHMARK(BM_{func.name}_{target.name}{parallel_suffix});\n\n')
                     
             benchmark.write('''
 // My code
@@ -1208,6 +1214,9 @@ def rotl(op1: int | Scalar | Vector, op2: int | Scalar | Vector) -> int | Scalar
         return rotl_constant(op1.constant_value, op2.constant_value, sizeof(op1.c_type)*8)
     
     return op1.rotl(op2)
+
+def bitselect(op1: int | Variable, op2: int | Variable, op3: int | Variable) -> int | Variable:
+    raise NotImplementedError
     
 class MemoryArray:
     c_type: ctype
