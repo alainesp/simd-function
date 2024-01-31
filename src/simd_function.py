@@ -1044,6 +1044,7 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
                         parallel_suffix = '' if parallel_factor == 1 and len(func.parallelization_factor[target]) == 1 else f'_x{parallel_factor}'
                         tests.write(f'TEST({Path(filename_root).name}, {func.name}_{target.name}{parallel_suffix})')
                         tests.write('\n{\n')
+                        tests.write(f'\tif (!(simd::CpuFeatures::{target.name} & simd::get_cpu_features())) return;\n\n')
                         tests.write(f'\tconstexpr size_t parallel_factor = {parallel_factor};\n')
                         tests.write(f'\tconstexpr size_t parallelism = parallel_factor * sizeof({get_type(func.params[0], target)}) / sizeof(uint32_t);\n')                  
                         tests.write('''
@@ -1096,6 +1097,8 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
                         
                         benchmark.write(f'static void BM_{func.name}_{target.name}{parallel_suffix}(benchmark::State& _benchmark_state) ')
                         benchmark.write('{\n')
+                        benchmark.write(f'\tif (!(simd::CpuFeatures::{target.name} & simd::get_cpu_features())) _benchmark_state.SkipWithMessage("No {target.name}");\n\n')
+
                         # Function params declaration
                         for arg in func.params:
                             param_suffix = f'[{arg.num_elems * (parallel_factor if isinstance(arg, VectorMemoryArray) else 1)}]' if isinstance(arg, MemoryArray) else ''
