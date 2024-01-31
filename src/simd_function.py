@@ -944,12 +944,15 @@ extern "C"
 def generate_code(filename_root: str = None, include_tests: bool = True):
     # Group targets on the same file
     c_code_targets: set[Target] = set()
+    avx_targets: set[Target] = set()
     masm64_targets: set[Target] = set()
     for func in defined_functions:
         for target in func.targets:
             match target:
-                case Target.PLAIN_C | Target.SSE2 | Target.AVX | Target.AVX2 | Target.AVX512:
+                case Target.PLAIN_C | Target.SSE2:
                     c_code_targets.add(target)
+                case Target.AVX | Target.AVX2 | Target.AVX512:
+                    avx_targets.add(target)
                 case Target.MASM64_AVX | Target.MASM64_AVX2:
                     masm64_targets.add(target)
                 case _: raise NotImplementedError   
@@ -960,9 +963,11 @@ def generate_code(filename_root: str = None, include_tests: bool = True):
         filename_root = get_function_definition_filename().removesuffix('.py')
     
     # Generate code
-    generate_code_one_file(filename_root + ".h", c_code_targets | masm64_targets, comments)
+    generate_code_one_file(filename_root + ".h", c_code_targets | avx_targets | masm64_targets, comments)
     if len(c_code_targets) > 0:
         generate_code_one_file(filename_root + ".cpp", c_code_targets, comments)
+    if len(avx_targets) > 0:
+        generate_code_one_file(filename_root + "_avx.cpp", avx_targets, comments)
     for comment in comments:
         comment.comment = comment.comment.replace('//', ';')
     if len(masm64_targets) > 0:
@@ -991,16 +996,17 @@ endif()
 ###############################################################################################################
 include(FetchContent)
 SET(BUILD_GMOCK OFF)
-FetchContent_Declare(googletest URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip)            
+FetchContent_Declare(googletest URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip)
+FetchContent_Declare(wy URL https://github.com/alainesp/wy/archive/refs/heads/main.zip)
 # For Windows: Prevent overriding the parent project's compiler/linker settings
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
+FetchContent_MakeAvailable(googletest wy)
 
 enable_testing()
 
-add_executable(runUnitTests tests.cpp)
+add_executable(runUnitTests tests.cpp md4.cpp md4_avx.cpp)
 set_property(TARGET runUnitTests PROPERTY CXX_STANDARD 20) # C++ language to use
-target_link_libraries(runUnitTests PRIVATE gtest_main)
+target_link_libraries(runUnitTests PRIVATE gtest_main wy)
 
 include(GoogleTest)
 gtest_discover_tests(runUnitTests)
@@ -1008,7 +1014,20 @@ gtest_discover_tests(runUnitTests)
 ###############################################################################################################
 # Benchmark
 ###############################################################################################################
-add_executable(runBenchmark benchmark.cpp md4.cpp arch_x64.asm)
+''')
+            if len(avx_targets) > 0:
+                cmakelist.write('if(CMAKE_COMPILER_IS_GNUCXX)\n')
+                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS -mavx2)\n')
+                cmakelist.write('elseif(GLM_USE_INTEL)\n')
+                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS /QxAVX2)\n')
+                cmakelist.write('elseif(MSVC)\n')
+                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS /arch:AVX2)\n')
+                cmakelist.write('endif()\n')
+                
+            cmakelist.write(f'add_executable(runBenchmark benchmark.cpp arch_x64.asm {Path(filename_root).name}.cpp {'' if len(avx_targets) == 0 else f'{Path(filename_root).name}_avx.cpp'})')      
+
+            cmakelist.write(
+'''
 set_property(TARGET runBenchmark PROPERTY CXX_STANDARD 20)	 # C++ language to use
 
 FetchContent_Declare(benchmark URL https://github.com/google/benchmark/archive/refs/tags/v1.8.3.zip)
@@ -1018,7 +1037,54 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
 ''')
         
         with open(path.dirname(filename_root) + '/tests.cpp', 'w') as tests:
-            tests.write(f'#include <gtest/gtest.h>\n#include "{Path(filename_root).name}.h"\n\n')
+            tests.write(f'#include <gtest/gtest.h>\n#include "{Path(filename_root).name}.h"\n#include <wy.hpp>\n#include "reference_implementation.c"\n\n')
+            for func in defined_functions:
+                for target in func.targets:
+                    for parallel_factor in func.parallelization_factor[target]:
+                        parallel_suffix = '' if parallel_factor == 1 and len(func.parallelization_factor[target]) == 1 else f'_x{parallel_factor}'
+                        tests.write(f'TEST({Path(filename_root).name}, {func.name}_{target.name}{parallel_suffix})')
+                        tests.write('\n{\n')
+                        tests.write(f'\tconstexpr size_t parallel_factor = {parallel_factor};\n')
+                        tests.write(f'\tconstexpr size_t parallelism = parallel_factor * sizeof({get_type(func.params[0], target)}) / sizeof(uint32_t);\n')                  
+                        tests.write('''
+	uint32_t state0[4 * parallelism];
+	uint32_t message0[16 * parallelism];
+
+''')
+                        tests.write(f'\t{get_type(func.params[0], target)} state1[4 * parallel_factor];\n')
+                        tests.write(f'\t{get_type(func.params[1], target)} message1[16 * parallel_factor];\n')
+                        tests.write('''
+	ASSERT_EQ(sizeof(state0), sizeof(state1));
+	ASSERT_EQ(sizeof(message0), sizeof(message1));
+
+	// Create a pseudo-random generator
+	wy::rand r;
+	std::vector<uint32_t> random_values;
+
+	for (size_t i = 0; i < 64; i++)
+	{
+		r.generate_stream(random_values, std::size(state0) + std::size(message0));
+		std::copy(random_values.cbegin(), random_values.cbegin() + std::size(state0), state0);
+		std::copy(random_values.cbegin() + std::size(state0), random_values.cend(), message0);
+
+		// Copy values to simd
+		for (size_t j = 0; j < std::size(state0); j++)
+			reinterpret_cast<uint32_t*>(state1)[j / 4 + (j & 3) * parallelism] = state0[j];
+		for (size_t j = 0; j < std::size(message0); j++)
+			reinterpret_cast<uint32_t*>(message1)[j / 16 + (j & 15) * parallelism] = message0[j];
+
+		// Hash
+		for (size_t j = 0; j < parallelism; j++)
+			md4_transform(state0 + j * 4, message0 + j * 16);
+''')
+                        tests.write(f'\t\t{func.name}_{target.name.lower()}{parallel_suffix}(state1, message1);')
+                        tests.write('''
+		// Compare results
+		for (size_t j = 0; j < std::size(state0); j++)
+			ASSERT_EQ(reinterpret_cast<uint32_t*>(state1)[j / 4 + (j & 3) * parallelism], state0[j]);
+	}
+}
+''')
             
         with open(path.dirname(filename_root) + '/benchmark.cpp', 'w') as benchmark:
             benchmark.write(f'#include <benchmark/benchmark.h>\n#include "{Path(filename_root).name}.h"\n\n')

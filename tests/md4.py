@@ -58,8 +58,9 @@ with Function(void)(state, block) as md4_block:
     state[3] += d;
     
 # Define targets
-md4_block.targets = [Target.PLAIN_C, Target.SSE2, Target.AVX2, Target.AVX512]
+md4_block.targets = [Target.PLAIN_C, Target.SSE2, Target.AVX, Target.AVX2, Target.AVX512]
 md4_block.parallelization_factor[Target.SSE2  ] = [1, 2, 3, 4]
+md4_block.parallelization_factor[Target.AVX   ] = [1, 2, 3, 4]
 md4_block.parallelization_factor[Target.AVX2  ] = [1, 2, 3, 4]
 md4_block.parallelization_factor[Target.AVX512] = [1, 2, 3, 4]
 generate_code()
