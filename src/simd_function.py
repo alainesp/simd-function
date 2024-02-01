@@ -891,7 +891,10 @@ def generate_code_one_file(filename: str, targets: set[Target], comments: list[C
         # for func in functions:
         #     func.get_includes(includes)
         # output.writelines([f'#include "{include}"\n' for include in includes])
-        output.write(
+        if is_header:
+            output.write('#include "../src/simd.hpp"\n\n')
+        else:
+            output.write(
 '''#define SimdScalarType uint32_t
 #include "../src/simd.hpp"
 using namespace simd;
@@ -1041,8 +1044,10 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest wy)
 
 enable_testing()
-
-add_executable(runUnitTests tests.cpp "../src/cpuid.cpp" "md4.cpp" "md4_avx.cpp")
+''')
+            cmakelist.write(f'add_executable(runUnitTests tests_{Path(filename_root).name}.cpp "../src/cpuid.cpp" "{Path(filename_root).name}.cpp" {'' if len(avx_targets) == 0 else f'{Path(filename_root).name}_avx.cpp'})\n')
+            cmakelist.write(
+'''
 set_property(TARGET runUnitTests PROPERTY CXX_STANDARD 20) # C++ language to use
 target_link_libraries(runUnitTests PRIVATE gtest_main wy)
 
@@ -1062,7 +1067,7 @@ gtest_discover_tests(runUnitTests)
                 cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS /arch:AVX)\n')
                 cmakelist.write('endif()\n')
                 
-            cmakelist.write(f'add_executable(runBenchmark "benchmark.cpp" "../src/cpuid.cpp" "arch_x64.asm" {Path(filename_root).name}.cpp {'' if len(avx_targets) == 0 else f'{Path(filename_root).name}_avx.cpp'})')      
+            cmakelist.write(f'add_executable(runBenchmark "benchmark_{Path(filename_root).name}.cpp" "../src/cpuid.cpp" "arch_x64.asm" "{Path(filename_root).name}.cpp" {'' if len(avx_targets) == 0 else f'{Path(filename_root).name}_avx.cpp'})')      
 
             cmakelist.write(
 '''
@@ -1074,7 +1079,7 @@ FetchContent_MakeAvailable(benchmark)
 target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::benchmark_main)
 ''')
         
-        with open(path.dirname(filename_root) + '/tests.cpp', 'w') as tests:
+        with open(path.dirname(filename_root) + f'/tests_{Path(filename_root).name}.cpp', 'w') as tests:
             tests.write(f'#include <gtest/gtest.h>\n#include "{Path(filename_root).name}.h"\n#include <wy.hpp>\n#include "reference_implementation.c"\n\n')
             for func in defined_functions:
                 for target in func.targets:
@@ -1114,7 +1119,7 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
 
 		// Hash
 		for (size_t j = 0; j < parallelism; j++)
-			md4_transform(state0 + j * 4, message0 + j * 16);
+			md5_transform(state0 + j * 4, message0 + j * 16);
 ''')
                         tests.write(f'\t\t{func.name}_{target.name.lower()}{parallel_suffix}(state1, message1);')
                         tests.write('''
@@ -1125,7 +1130,7 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
 }
 ''')
             
-        with open(path.dirname(filename_root) + '/benchmark.cpp', 'w') as benchmark:
+        with open(path.dirname(filename_root) + f'/benchmark_{Path(filename_root).name}.cpp', 'w') as benchmark:
             benchmark.write(f'#include <benchmark/benchmark.h>\n#include "{Path(filename_root).name}.h"\n\n')
             
             for func in defined_functions:
@@ -1158,19 +1163,19 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
                     
             benchmark.write('''
 // My code
-extern "C" void dcc_ntlm_part_avx2(__m256i state[12], __m256i block[48]);
-static void BM_md4_block_avx2_asm(benchmark::State& _benchmark_state) {
+extern "C" void crypt_md5_avx2_kernel_asm(__m256i state[12], __m256i block[48]);
+static void BM_crypt_md5_avx2_kernel_asm(benchmark::State& _benchmark_state) {
 	__m256i state[12];
 	__m256i block[48];
 	uint32_t num_calls = 0;
 
 	for (auto _ : _benchmark_state) {
-		dcc_ntlm_part_avx2(state, block);
+		crypt_md5_avx2_kernel_asm(state, block);
 		num_calls++;
 	}
 	_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * 24, benchmark::Counter::kIsRate);
 }
-BENCHMARK(BM_md4_block_avx2_asm);
+BENCHMARK(BM_crypt_md5_avx2_kernel_asm);
 ''')
             
         
@@ -1296,7 +1301,8 @@ class Variable:
     # Operator	Magic Method
     # –	__neg__(self)
     # +	__pos__(self)
-    # ~	__invert__(self)
+    def __invert__(self):# ~
+        return self._binary_op(0xffffffff, operator.__xor__, XorInstruction)
     
 class Vector(Variable):
     pass

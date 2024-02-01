@@ -163,11 +163,14 @@ cython_debug/
 /.vscode
 /.vs
 /tests/arch_x64.asm
-/tests/benchmark.cpp
+/tests/benchmark_*.cpp
 /tests/CMakeLists.txt
 /tests/CMakeSettings.json
 /tests/md4.cpp
 /tests/md4.h
 /tests/md4_avx.cpp
-/tests/tests.cpp
+/tests/tests_*.cpp
 /tests/reference_implementation.c
+/tests/md5.cpp
+/tests/md5.h
+/tests/md5_avx.cpp

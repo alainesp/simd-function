@@ -493,14 +493,29 @@ template<class Vector> static SIMD_INLINE Vector operator^(const Vector a, const
 static SIMD_INLINE Vec128Int operator^(const Vec128Int a, const Vec128Int b) noexcept { return _mm_xor_si128(a, b); }
 static SIMD_INLINE Vec128f32 operator^(const Vec128f32 a, const Vec128f32 b) noexcept { return _mm_xor_ps   (a, b); }
 static SIMD_INLINE Vec128f64 operator^(const Vec128f64 a, const Vec128f64 b) noexcept { return _mm_xor_pd   (a, b); }
+
+static SIMD_INLINE Vec128Int operator^(const Vec128Int a, const uint8_t  b) noexcept { return _mm_xor_si128(a, Set<uint8_t , Vec128u8 >(b)); }
+static SIMD_INLINE Vec128Int operator^(const Vec128Int a, const uint16_t b) noexcept { return _mm_xor_si128(a, Set<uint16_t, Vec128u16>(b)); }
+static SIMD_INLINE Vec128Int operator^(const Vec128Int a, const uint32_t b) noexcept { return _mm_xor_si128(a, Set<uint32_t, Vec128u32>(b)); }
+static SIMD_INLINE Vec128Int operator^(const Vec128Int a, const uint64_t b) noexcept { return _mm_xor_si128(a, Set<uint64_t, Vec128u64>(b)); }
 // AVX/AVX2
 static SIMD_INLINE Vec256Int operator^(const Vec256Int a, const Vec256Int b) noexcept { return _mm256_xor_si256(a, b); }
 static SIMD_INLINE Vec256f32 operator^(const Vec256f32 a, const Vec256f32 b) noexcept { return _mm256_xor_ps   (a, b); }
 static SIMD_INLINE Vec256f64 operator^(const Vec256f64 a, const Vec256f64 b) noexcept { return _mm256_xor_pd   (a, b); }
+
+static SIMD_INLINE Vec256Int operator^(const Vec256Int a, const uint8_t  b) noexcept { return _mm256_xor_si256(a, Set<uint8_t , Vec256u8 >(b)); }
+static SIMD_INLINE Vec256Int operator^(const Vec256Int a, const uint16_t b) noexcept { return _mm256_xor_si256(a, Set<uint16_t, Vec256u16>(b)); }
+static SIMD_INLINE Vec256Int operator^(const Vec256Int a, const uint32_t b) noexcept { return _mm256_xor_si256(a, Set<uint32_t, Vec256u32>(b)); }
+static SIMD_INLINE Vec256Int operator^(const Vec256Int a, const uint64_t b) noexcept { return _mm256_xor_si256(a, Set<uint64_t, Vec256u64>(b)); }
 // AVX512
 static SIMD_INLINE Vec512Int operator^(const Vec512Int a, const Vec512Int b) noexcept { return _mm512_xor_si512(a, b); }
 static SIMD_INLINE Vec512f32 operator^(const Vec512f32 a, const Vec512f32 b) noexcept { return _mm512_xor_ps   (a, b); }
 static SIMD_INLINE Vec512f64 operator^(const Vec512f64 a, const Vec512f64 b) noexcept { return _mm512_xor_pd   (a, b); }
+
+static SIMD_INLINE Vec512Int operator^(const Vec512Int a, const uint8_t  b) noexcept { return _mm512_xor_si512(a, Set<uint8_t , Vec512u8 >(b)); }
+static SIMD_INLINE Vec512Int operator^(const Vec512Int a, const uint16_t b) noexcept { return _mm512_xor_si512(a, Set<uint16_t, Vec512u16>(b)); }
+static SIMD_INLINE Vec512Int operator^(const Vec512Int a, const uint32_t b) noexcept { return _mm512_xor_si512(a, Set<uint32_t, Vec512u32>(b)); }
+static SIMD_INLINE Vec512Int operator^(const Vec512Int a, const uint64_t b) noexcept { return _mm512_xor_si512(a, Set<uint64_t, Vec512u64>(b)); }
 #endif
 // ^=
 template<class Vector, class T> static SIMD_INLINE Vector operator^=(Vector& a, const T b) noexcept { return (a = a ^ b); }
