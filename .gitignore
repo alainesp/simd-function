@@ -162,3 +162,12 @@ cython_debug/
 /bool_optimization/.vs
 /.vscode
 /.vs
+/tests/arch_x64.asm
+/tests/benchmark.cpp
+/tests/CMakeLists.txt
+/tests/CMakeSettings.json
+/tests/md4.cpp
+/tests/md4.h
+/tests/md4_avx.cpp
+/tests/tests.cpp
+/tests/reference_implementation.c

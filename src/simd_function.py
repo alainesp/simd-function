@@ -1004,7 +1004,7 @@ FetchContent_MakeAvailable(googletest wy)
 
 enable_testing()
 
-add_executable(runUnitTests tests.cpp md4.cpp md4_avx.cpp)
+add_executable(runUnitTests tests.cpp "../src/cpuid.cpp" "md4.cpp" "md4_avx.cpp")
 set_property(TARGET runUnitTests PROPERTY CXX_STANDARD 20) # C++ language to use
 target_link_libraries(runUnitTests PRIVATE gtest_main wy)
 
@@ -1024,7 +1024,7 @@ gtest_discover_tests(runUnitTests)
                 cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS /arch:AVX)\n')
                 cmakelist.write('endif()\n')
                 
-            cmakelist.write(f'add_executable(runBenchmark benchmark.cpp arch_x64.asm {Path(filename_root).name}.cpp {'' if len(avx_targets) == 0 else f'{Path(filename_root).name}_avx.cpp'})')      
+            cmakelist.write(f'add_executable(runBenchmark "benchmark.cpp" "../src/cpuid.cpp" "arch_x64.asm" {Path(filename_root).name}.cpp {'' if len(avx_targets) == 0 else f'{Path(filename_root).name}_avx.cpp'})')      
 
             cmakelist.write(
 '''
@@ -1044,7 +1044,7 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
                         parallel_suffix = '' if parallel_factor == 1 and len(func.parallelization_factor[target]) == 1 else f'_x{parallel_factor}'
                         tests.write(f'TEST({Path(filename_root).name}, {func.name}_{target.name}{parallel_suffix})')
                         tests.write('\n{\n')
-                        tests.write(f'\tif (!(simd::CpuFeatures::{target.name} & simd::get_cpu_features())) return;\n\n')
+                        tests.write(f'\tif (!(simd::CpuFeatures::{target.name} & simd::get_cpu_features())) GTEST_SKIP() << "No {target.name}";\n\n')
                         tests.write(f'\tconstexpr size_t parallel_factor = {parallel_factor};\n')
                         tests.write(f'\tconstexpr size_t parallelism = parallel_factor * sizeof({get_type(func.params[0], target)}) / sizeof(uint32_t);\n')                  
                         tests.write('''
