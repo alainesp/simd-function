@@ -123,7 +123,8 @@ class Instruction:
 
 def get_expresion(tmp: 'int | float | Variable', target: Target, instruction_by_tmp: dict['Variable', Instruction]) -> str:
     if isinstance(tmp, int) or isinstance(tmp, float):
-        return f'{tmp}'
+        if tmp >= 64: return f'{hex(tmp)}'
+        else:         return f'{tmp:2}'
     if target == Target.PLAIN_C and isinstance(tmp, Variable) and tmp.is_constant:
         return f'{hex(tmp.constant_value)}'
     if not tmp.is_tmp():
@@ -169,7 +170,7 @@ class LoadInstruction(Instruction):
                (target == Target.AVX512 and self.memory.alignment < 64):
                 aligment_str = 'u'
             # Expresion
-            memory_expression = f'load{aligment_str}({self.memory.name} + {self.index})'
+            memory_expression = f'load{aligment_str}({self.memory.name} + {self.index:2})'
             if self.result.is_tmp():
                 return memory_expression
             else:
@@ -216,7 +217,7 @@ class StoreInstruction(Instruction):
                (target == Target.AVX512 and self.memory.alignment < 64):
                 aligment_str = 'u'
             # Expresion
-            return f'store{aligment_str}({self.memory.name} + {self.index}, {get_expresion(self.operand, target, instruction_by_tmp)});'
+            return f'store{aligment_str}({self.memory.name} + {self.index:2}, {get_expresion(self.operand, target, instruction_by_tmp)});'
  
 class UnaryInstruction(Instruction):
     operand: 'Scalar | Vector | int | float'
@@ -457,8 +458,10 @@ class RotlInstruction(BinaryInstruction):
             elif self.result.c_type == uint64_t:
                 return '_rotl64'
             
-            
-        raise NotImplementedError
+        if isinstance(self.operand2, int):
+            return f'rotl<{get_type(self.result.c_type, Target.PLAIN_C)}, {self.operand2}>'
+        else:
+            return 'rotl'
            
 class RepeatInstruction(Instruction):
     count: int
@@ -628,8 +631,6 @@ class Function:
         
         if not hasattr(self, 'instructions_with_rot'):
             self.instructions_with_rot = deepcopy(self.instructions)
-        self.__convert_rotations_to_shifts()
-        old_instructions = self.instructions
         old_params = self.params
                     
         if Target.MASM64_AVX in self.targets or Target.MASM64_AVX2 in self.targets:
@@ -686,6 +687,12 @@ class Function:
         
         # Generate code for all targets
         for target in self.targets:
+            if target == Target.AVX512:
+                old_instructions = self.instructions_with_rot
+            else:
+                self.__convert_rotations_to_shifts()
+                old_instructions = self.instructions
+            
             for parallel_factor in self.parallelization_factor[target]:
                 ########################################################################################
                 # Parallelization
@@ -831,7 +838,7 @@ class Function:
                         output.write(f'\n\n\tvzeroupper\n\tRET\n{self.name}_{target.name} ENDP\n\n')
                     case _: raise NotImplementedError
                 
-        self.instructions = old_instructions
+            self.instructions = old_instructions
         self.params = old_params
     
     def Return(self, value):

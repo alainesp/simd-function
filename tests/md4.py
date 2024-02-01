@@ -28,10 +28,10 @@ with Function(void)(state, block) as md4_block:
 
     # Round 1
     with Repeat(4):
-        a += block[0]; t = c ^ d; t &= b; a += d ^ t; a = rotl(a,  3);
-        d += block[1]; t = b ^ c; t &= a; d += c ^ t; d = rotl(d,  7);
-        c += block[2]; t = a ^ b; t &= d; c += b ^ t; c = rotl(c, 11);
-        b += block[3]; t = d ^ a; t &= c; b += a ^ t; b = rotl(b, 19);
+        a += block[0]; t = c ^ d; t &= b; t ^= d; a += t; a = rotl(a,  3);
+        d += block[1]; t = b ^ c; t &= a; t ^= c; d += t; d = rotl(d,  7);
+        c += block[2]; t = a ^ b; t &= d; t ^= b; c += t; c = rotl(c, 11);
+        b += block[3]; t = d ^ a; t &= c; t ^= a; b += t; b = rotl(b, 19);
         block += 4
     block -= 4 * 4
 

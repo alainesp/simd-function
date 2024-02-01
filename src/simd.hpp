@@ -882,11 +882,11 @@ template<class T = SimdScalarType> static SIMD_INLINE Vec512Int rotl(const Vec51
 /*else*/ if constexpr (sizeof(T) == 4) return _mm512_rolv_epi32(a, b);
     else if constexpr (sizeof(T) == 8) return _mm512_rolv_epi64(a, b);
 }
-template<class T = SimdScalarType> static SIMD_INLINE Vec512Int rotl(const Vec512Int a, const int b) noexcept {
-    if constexpr (sizeof(T) == 1)      return (a << b) | (a >> (sizeof(T) * 8 - b));
-    else if constexpr (sizeof(T) == 2) return (a << b) | (a >> (sizeof(T) * 8 - b));
-    else if constexpr (sizeof(T) == 4) return _mm512_rol_epi32(a, b);
-    else if constexpr (sizeof(T) == 8) return _mm512_rol_epi64(a, b);
+template<class T = SimdScalarType, int shift_amount> static SIMD_INLINE Vec512Int rotl(const Vec512Int a, const int) noexcept {
+    if constexpr (sizeof(T) == 1)      return (a << shift_amount) | (a >> (sizeof(T) * 8 - shift_amount));
+    else if constexpr (sizeof(T) == 2) return (a << shift_amount) | (a >> (sizeof(T) * 8 - shift_amount));
+    else if constexpr (sizeof(T) == 4) return _mm512_rol_epi32(a, shift_amount);
+    else if constexpr (sizeof(T) == 8) return _mm512_rol_epi64(a, shift_amount);
 }
 #endif
 
