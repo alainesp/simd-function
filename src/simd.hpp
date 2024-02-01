@@ -509,9 +509,8 @@ template<class Vector, class T> static SIMD_INLINE Vector operator^=(Vector& a, 
 // Ternary Logic
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #if SIMD_ARCH_X86
-//static SIMD_INLINE Vec256Int ternary_logic(const Vec256Int a, const Vec256Int b, const Vec256Int c, const int imm8) noexcept { return _mm256_ternarylogic_epi64(a, b, c, imm8); }
-//static SIMD_INLINE Vec512Int ternary_logic(const Vec512Int a, const Vec512Int b, const Vec512Int c, const int imm8) noexcept { return _mm512_ternarylogic_epi64(a, b, c, imm8); }
-#define ternary_logic(a, b, c, imm8) _mm512_ternarylogic_epi64(a, b, c, imm8)
+template<int imm8> static SIMD_INLINE Vec256Int ternary_logic(const Vec256Int a, const Vec256Int b, const Vec256Int c) noexcept { return _mm256_ternarylogic_epi64(a, b, c, imm8); }
+template<int imm8> static SIMD_INLINE Vec512Int ternary_logic(const Vec512Int a, const Vec512Int b, const Vec512Int c) noexcept { return _mm512_ternarylogic_epi64(a, b, c, imm8); }
 #endif
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -414,7 +414,7 @@ class TernaryLoginInstruction(BinaryInstruction):
         
         operand1_expression, operand2_expression = self.get_expresions(target, instruction_by_tmp)
         operand3_expression = get_expresion(self.operand3, target, instruction_by_tmp)
-        call_result = f'ternary_logic({operand1_expression}, {operand2_expression}, {operand3_expression}, {hex(self.imm8)})'
+        call_result = f'ternary_logic<{hex(self.imm8)}>({operand1_expression}, {operand2_expression}, {operand3_expression})'
         if self.result.is_tmp(): return call_result
         else: return f'{self.result.name} = {call_result};'
         
@@ -459,7 +459,7 @@ class RotlInstruction(BinaryInstruction):
                 return '_rotl64'
             
         if isinstance(self.operand2, int):
-            return f'rotl<{get_type(self.result.c_type, Target.PLAIN_C)}, {self.operand2}>'
+            return f'rotl<{get_type(self.result.c_type, Target.PLAIN_C)}, {self.operand2:2}>'
         else:
             return 'rotl'
            
@@ -626,7 +626,8 @@ class Function:
                     # Revert Parallelization
                     for arg in self.params:
                         if isinstance(arg, VectorMemoryArray):       
-                            arg.num_elems //= parallel_factor         
+                            arg.num_elems //= parallel_factor
+                output.write('\n')
             return
         
         if not hasattr(self, 'instructions_with_rot'):
@@ -833,12 +834,14 @@ class Function:
                 # Close function definition
                 match target:
                     case Target.PLAIN_C | Target.SSE2 | Target.AVX | Target.AVX2 | Target.AVX512:          
-                        output.write('\n}\n\n')
+                        output.write('\n}\n')
                     case Target.MASM64_AVX | Target.MASM64_AVX2:
                         output.write(f'\n\n\tvzeroupper\n\tRET\n{self.name}_{target.name} ENDP\n\n')
                     case _: raise NotImplementedError
-                
+                    
+            output.write('\n')
             self.instructions = old_instructions
+
         self.params = old_params
     
     def Return(self, value):
@@ -859,7 +862,7 @@ def generate_code_one_file(filename: str, targets: set[Target], comments: list[C
     # Set targets
     original_targets = [func.targets for func in functions]
     for func in functions:
-        func.targets = list(targets)
+        func.targets = list(targets.intersection(func.targets))
         func.targets.sort()
           
     is_header = filename.endswith('.h')  
@@ -1348,6 +1351,7 @@ def ternary_logic(op1: int | Variable, op2: int | Variable, op3: int | Variable,
         
     result = Vector(op1.c_type, is_uninitialize=False)
     defined_functions[-1].instructions.append(TernaryLoginInstruction(result, op1, op2, op3, imm8))
+    return result
     
 class MemoryArray:
     c_type: ctype
