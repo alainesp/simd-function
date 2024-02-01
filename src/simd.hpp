@@ -506,6 +506,15 @@ static SIMD_INLINE Vec512f64 operator^(const Vec512f64 a, const Vec512f64 b) noe
 template<class Vector, class T> static SIMD_INLINE Vector operator^=(Vector& a, const T b) noexcept { return (a = a ^ b); }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Ternary Logic
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#if SIMD_ARCH_X86
+//static SIMD_INLINE Vec256Int ternary_logic(const Vec256Int a, const Vec256Int b, const Vec256Int c, const int imm8) noexcept { return _mm256_ternarylogic_epi64(a, b, c, imm8); }
+//static SIMD_INLINE Vec512Int ternary_logic(const Vec512Int a, const Vec512Int b, const Vec512Int c, const int imm8) noexcept { return _mm512_ternarylogic_epi64(a, b, c, imm8); }
+#define ternary_logic(a, b, c, imm8) _mm512_ternarylogic_epi64(a, b, c, imm8)
+#endif
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Sum
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Vector + Vector
@@ -854,8 +863,32 @@ template<class Vector, class T> static SIMD_INLINE Vector operator<<=(Vector& a,
 template<class Vector, class T> static SIMD_INLINE Vector operator>>=(Vector& a, const T b) noexcept { return (a = a >> b); }
 
 // Rotation
-template<class Vector, class T = SimdScalarType> static SIMD_INLINE Vector rotl(const Vector a, const int b) noexcept { return (a << b) | (a >> (sizeof(T) * 8 - b)); }
-template<class Vector, class T = SimdScalarType> static SIMD_INLINE Vector rotr(const Vector a, const int b) noexcept { return (a >> b) | (a << (sizeof(T) * 8 - b)); }
+#if SIMD_ARCH_ARM
+template<class T = SimdScalarType> static SIMD_INLINE Vec128 rotl(const Vec128 a, const Vec128 b) noexcept { return (a << b) | (a >> (sizeof(T) * 8 - b)); }
+template<class T = SimdScalarType> static SIMD_INLINE Vec128 rotl(const Vec128 a, const int    b) noexcept { return (a << b) | (a >> (sizeof(T) * 8 - b)); }
+#endif
+
+#if SIMD_ARCH_X86
+// SSE2
+//template<class T = SimdScalarType> static SIMD_INLINE Vec128Int rotl(const Vec128Int a, const Vec128Int b) noexcept { return (a << b) | (a >> (sizeof(T) * 8 - b)); }
+template<class T = SimdScalarType> static SIMD_INLINE Vec128Int rotl(const Vec128Int a, const int       b) noexcept { return (a << b) | (a >> (sizeof(T) * 8 - b)); }
+// AVX/AVX2
+//template<class T = SimdScalarType> static SIMD_INLINE Vec256Int rotl(const Vec256Int a, const Vec256Int b) noexcept { return (a << b) | (a >> (sizeof(T) * 8 - b)); }
+template<class T = SimdScalarType> static SIMD_INLINE Vec256Int rotl(const Vec256Int a, const int       b) noexcept { return (a << b) | (a >> (sizeof(T) * 8 - b)); }
+// AVX512
+template<class T = SimdScalarType> static SIMD_INLINE Vec512Int rotl(const Vec512Int a, const Vec512Int b) noexcept {
+    //if constexpr (sizeof(T) == 1)      return (a << b) | (a >> (sizeof(T) * 8 - b));
+    //else if constexpr (sizeof(T) == 2) return (a << b) | (a >> (sizeof(T) * 8 - b));
+/*else*/ if constexpr (sizeof(T) == 4) return _mm512_rolv_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm512_rolv_epi64(a, b);
+}
+template<class T = SimdScalarType> static SIMD_INLINE Vec512Int rotl(const Vec512Int a, const int b) noexcept {
+    if constexpr (sizeof(T) == 1)      return (a << b) | (a >> (sizeof(T) * 8 - b));
+    else if constexpr (sizeof(T) == 2) return (a << b) | (a >> (sizeof(T) * 8 - b));
+    else if constexpr (sizeof(T) == 4) return _mm512_rol_epi32(a, b);
+    else if constexpr (sizeof(T) == 8) return _mm512_rol_epi64(a, b);
+}
+#endif
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // CPU feature detection

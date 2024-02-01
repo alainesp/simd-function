@@ -387,6 +387,35 @@ class OrInstruction(LogicalInstruction):
 class XorInstruction(LogicalInstruction):
     def __init__(self, result, operand1, operand2) -> None:
         super().__init__(result, operand1, operand2, '^', 'xor')
+class TernaryLoginInstruction(BinaryInstruction):
+    def __init__(self, result, operand1, operand2, operand3, imm8) -> None:
+        super().__init__(result, operand1, operand2)
+        self.operand3 = operand3
+        self.imm8 = imm8
+        
+    def register_constant(self, constants: set[int | float]):
+        super().register_constant(constants)
+        
+        if isinstance(self.operand3, int) or isinstance(self.operand3, float):
+            constants.add(self.operand3)
+            self.operand3 = Vector(self.operand3.c_type, True, self.operand3, is_uninitialize=False)
+            self.operand3.name = f'const_{hex(self.operand3.constant_value)}'
+        elif isinstance(self.operand3, Variable) and self.operand3.is_constant:
+            constants.add(self.operand3.constant_value)
+            self.operand3.name = f'const_{hex(self.operand3.constant_value)}'
+                  
+    def use_value(self, value) -> bool:
+        return super().use_value(value) or self.operand3 == value
+    
+    def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
+        if self.is_nope: return ''
+        if target != Target.AVX512: raise TypeError
+        
+        operand1_expression, operand2_expression = self.get_expresions(target, instruction_by_tmp)
+        operand3_expression = get_expresion(self.operand3, target, instruction_by_tmp)
+        call_result = f'ternary_logic({operand1_expression}, {operand2_expression}, {operand3_expression}, {hex(self.imm8)})'
+        if self.result.is_tmp(): return call_result
+        else: return f'{self.result.name} = {call_result};'
         
 # Shift/Rotations
 class ShiftLInstruction(BinaryInstruction):
@@ -466,8 +495,7 @@ class Repeat:
 ##################################################################################
 # SIMD function
 ##################################################################################
-def get_type(var: any, target: Target) -> str:
-    
+def get_type(var: any, target: Target) -> str: 
     if isinstance(var, Vector) or isinstance(var, VectorMemoryArray): 
         match target:
             case Target.PLAIN_C: return retrieve_name(var.c_type)
@@ -1164,7 +1192,7 @@ class Variable:
             raise ValueError('The variable is uninitialize')
     def check_same_type(self, other):
         if self.c_type != other.c_type:
-            raise ValueError('The two vectors need to be of the same type')     
+            raise ValueError('The two vectors need to be of the same type')
     def perform_checks(self, other):
         self.check_uninitialize()
         
@@ -1286,6 +1314,33 @@ def rotl(op1: int | Scalar | Vector, op2: int | Scalar | Vector) -> int | Scalar
 
 def bitselect(op1: int | Variable, op2: int | Variable, op3: int | Variable) -> int | Variable:
     raise NotImplementedError
+
+def ternary_logic(op1: int | Variable, op2: int | Variable, op3: int | Variable, imm8: int) -> int | Variable:
+    # Checks
+    if not isinstance(op1, Variable) and not isinstance(op1, int): raise ValueError
+    if not isinstance(op2, Variable) and not isinstance(op2, int): raise ValueError
+    if not isinstance(op3, Variable) and not isinstance(op3, int): raise ValueError
+    if not isinstance(imm8, int): raise ValueError
+    if imm8 >= 256 or imm8 < 0: raise ValueError
+    
+    if isinstance(op1, Variable) and op1.is_uninitialize: raise ValueError('The variable is uninitialize')
+    if isinstance(op2, Variable) and op2.is_uninitialize: raise ValueError('The variable is uninitialize')
+    if isinstance(op3, Variable) and op3.is_uninitialize: raise ValueError('The variable is uninitialize')
+
+    if isinstance(op1, Variable) and is_float_type(op1.c_type): raise ValueError('The variable is not int')
+    if isinstance(op2, Variable) and is_float_type(op2.c_type): raise ValueError('The variable is not int')
+    if isinstance(op3, Variable) and is_float_type(op3.c_type): raise ValueError('The variable is not int')
+
+    # Find variable names
+    if isinstance(op1, Variable): op1.find_name()
+    if isinstance(op2, Variable): op2.find_name()
+    if isinstance(op3, Variable): op3.find_name()
+    
+    if isinstance(op1, int) and isinstance(op2, int) and isinstance(op3, int):
+        raise NotImplementedError
+        
+    result = Vector(op1.c_type, is_uninitialize=False)
+    defined_functions[-1].instructions.append(TernaryLoginInstruction(result, op1, op2, op3, imm8))
     
 class MemoryArray:
     c_type: ctype
