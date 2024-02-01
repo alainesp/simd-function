@@ -32,8 +32,6 @@ struct operation {
 	uint32_t var0_index;
 	uint32_t var1_index;
 
-	operation(uint32_t op_index, uint32_t var0_index, uint32_t var1_index) noexcept : op_index(op_index), var0_index(var0_index), var1_index(var1_index)
-	{}
 	operation() noexcept : op_index(0), var0_index(0), var1_index(0)
 	{}
 };
@@ -45,15 +43,15 @@ static std::vector<std::vector<operation>> found;
 static operation my_operations[32];
 
 // Boolen Function to optimize
-//static constexpr uint64_t function_truth_table = ((VAR_TRUTH_TABLE[0] & (VAR_TRUTH_TABLE[1] | VAR_TRUTH_TABLE[2])) | (VAR_TRUTH_TABLE[1] & VAR_TRUTH_TABLE[2]));
 static constexpr uint64_t function_truth_tables[] = {
-	//(VAR_TRUTH_TABLE[2] ^ (VAR_TRUTH_TABLE[0] & (VAR_TRUTH_TABLE[1] ^ VAR_TRUTH_TABLE[2]))),
-	//(VAR_TRUTH_TABLE[1] ^ (VAR_TRUTH_TABLE[3] & (VAR_TRUTH_TABLE[0] ^ VAR_TRUTH_TABLE[1])))
-	((VAR_TRUTH_TABLE[0] & (VAR_TRUTH_TABLE[1] | VAR_TRUTH_TABLE[2])) | (VAR_TRUTH_TABLE[1] & VAR_TRUTH_TABLE[2])),
-	((VAR_TRUTH_TABLE[3] & (VAR_TRUTH_TABLE[0] | VAR_TRUTH_TABLE[1])) | (VAR_TRUTH_TABLE[0] & VAR_TRUTH_TABLE[1]))
+	//VAR_TRUTH_TABLE[2] ^ (VAR_TRUTH_TABLE[0] & (VAR_TRUTH_TABLE[1] ^ VAR_TRUTH_TABLE[2])),
+	//VAR_TRUTH_TABLE[1] ^ (VAR_TRUTH_TABLE[3] & (VAR_TRUTH_TABLE[0] ^ VAR_TRUTH_TABLE[1]))
+	//(VAR_TRUTH_TABLE[0] & (VAR_TRUTH_TABLE[1] | VAR_TRUTH_TABLE[2])) | (VAR_TRUTH_TABLE[1] & VAR_TRUTH_TABLE[2]),
+	//(VAR_TRUTH_TABLE[3] & (VAR_TRUTH_TABLE[0] | VAR_TRUTH_TABLE[1])) | (VAR_TRUTH_TABLE[0] & VAR_TRUTH_TABLE[1])
+	VAR_TRUTH_TABLE[1] ^ (VAR_TRUTH_TABLE[0] | ~VAR_TRUTH_TABLE[2])
 };
-static constexpr uint32_t num_function_params = 4;// 3;
-static uint32_t max_function_depth = 5;//3;
+static constexpr uint32_t num_function_params = 3;
+static uint32_t max_function_depth = 3;
 static constexpr uint32_t VALUE_FOUND_MASK = ~(UINT32_MAX << std::size(function_truth_tables));
 
 static std::chrono::time_point<std::chrono::steady_clock> start;
@@ -92,7 +90,7 @@ static void recursive_optimize(uint32_t depth, uint32_t vars_index, uint32_t val
 	if (depth == 1 && my_operations[0].var0_index == vars_index - 2)
 	{
 		auto duration = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start);
-		uint32_t num_operations = std::size(binary_op) + 1;
+		uint32_t num_operations = static_cast<uint32_t>(std::size(binary_op) + 1);
 		std::cout << std::format("Completion {:3}% {:02}:{:02}\n", (1 + my_operations[0].op_index * num_operations) * 100 / num_operations / num_operations, duration.count() / 60, duration.count() % 60);
 	}
 	// Binary operation
@@ -128,7 +126,7 @@ static void recursive_optimize(uint32_t depth, uint32_t vars_index, uint32_t val
 		if (depth == 1 && my_operations[0].var0_index == vars_index - 3 && my_operations[0].var1_index == vars_index - 2)
 		{
 			auto duration = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start);
-			uint32_t num_operations = std::size(binary_op) + 1;
+			uint32_t num_operations = static_cast<uint32_t>(std::size(binary_op) + 1);
 			std::cout << std::format("Completion {:3}% {:02}:{:02}\n", (op_index + 2 + my_operations[0].op_index * num_operations) * 100 / num_operations / num_operations, duration.count() / 60, duration.count() % 60);
 		}
 	}
@@ -215,10 +213,10 @@ static void optimize() noexcept
 	for (size_t i = 0; i < found.size(); i++)
 		if (good_solution[i])
 		{
-			//for (const auto& op : found[i])
-				std::cout << print_expresion(found[i], static_cast<uint32_t>(found[i].size() - 1));//std::format("{}({}, {})\n", operation_name[op.op_index], op.var0_index, op.var1_index);
+			for (uint32_t j = 0; j < found[i].size(); j++)
+					std::cout << print_expresion(found[i], j) + "\n";
 
-			std::cout << std::format("\nNumTmpRegs = {}\n\n", count_tmp_registers(found[i], static_cast<uint32_t>(found[i].size() - 1)));
+			std::cout << std::format("NumTmpRegs = {}\n\n", count_tmp_registers(found[i], static_cast<uint32_t>(found[i].size() - 1)));
 		}
 }
 
