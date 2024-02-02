@@ -707,7 +707,7 @@ class Function:
                 # Params
                 self.params = deepcopy(old_params)
                 for arg in self.params:
-                    if isinstance(arg, VectorMemoryArray):       
+                    if isinstance(arg, VectorMemoryArray) and arg.is_parallelizable:       
                         arg.num_elems *= parallel_factor
                         
                 self.instructions = [] 
@@ -735,8 +735,8 @@ class Function:
                             if isinstance(self.instructions[i].result, MemoryArray):
                                 if self.instructions[i].result.is_parallelizable:
                                     self.instructions[i].operand2 *= parallel_factor
-                                    for p in range(1, parallel_factor):
-                                        self.instructions[i + p].is_nope = True
+                                for p in range(1, parallel_factor):
+                                    self.instructions[i + p].is_nope = True
                             else:
                                 for p in range(parallel_factor):
                                     self.instructions[i + p].result.name += f'{p}'
@@ -761,7 +761,7 @@ class Function:
                         output.write('\n{\n')
                         
                         last_type: str = ''
-                        variable_names = set()
+                        variable_names = set([v.name for v in self.global_vars])
                         param_names = set([arg.name for arg in self.params])
                         for instruction in self.instructions:
                             if instruction.result and instruction.result.name and instruction.result.name not in variable_names and instruction.result.name not in param_names:

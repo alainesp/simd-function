@@ -35,38 +35,45 @@ with Function(void)(state, block) as md5_block:
     d = state[3]
 
     # Round 1
-    for i in range(0, 16, 4):
-        a += block[i+0]; t = c ^ d; t &= b; a += md5_consts[i+0]; t ^= d; a += t; a = rotl(a,  7); a += b;
-        d += block[i+1]; t = b ^ c; t &= a; d += md5_consts[i+1]; t ^= c; d += t; d = rotl(d, 12); d += a;
-        c += block[i+2]; t = a ^ b; t &= d; c += md5_consts[i+2]; t ^= b; c += t; c = rotl(c, 17); c += d;
-        b += block[i+3]; t = d ^ a; t &= c; b += md5_consts[i+3]; t ^= a; b += t; b = rotl(b, 22); b += c;
+    with Repeat(4):
+        a += block[0]; t = c ^ d; t &= b; a += md5_consts[0]; t ^= d; a += t; a = rotl(a,  7); a += b;
+        d += block[1]; t = b ^ c; t &= a; d += md5_consts[1]; t ^= c; d += t; d = rotl(d, 12); d += a;
+        c += block[2]; t = a ^ b; t &= d; c += md5_consts[2]; t ^= b; c += t; c = rotl(c, 17); c += d;
+        b += block[3]; t = d ^ a; t &= c; b += md5_consts[3]; t ^= a; b += t; b = rotl(b, 22); b += c;
+        block += 4
+        md5_consts += 4
+    block -= 4 * 4
 
 	# Round 2
     for i in range(0, 16, 4):
-        a += block[(i+1 ) & 15]; t = b ^ c; t &= d; a += md5_consts[i+0+16]; t ^= c; a += t; a = rotl(a,  5); a += b;
-        d += block[(i+6 ) & 15]; t = a ^ b; t &= c; d += md5_consts[i+1+16]; t ^= b; d += t; d = rotl(d,  9); d += a;
-        c += block[(i+11) & 15]; t = d ^ a; t &= b; c += md5_consts[i+2+16]; t ^= a; c += t; c = rotl(c, 14); c += d;
-        b += block[(i+0 ) & 15]; t = c ^ d; t &= a; b += md5_consts[i+3+16]; t ^= d; b += t; b = rotl(b, 20); b += c;
+        a += block[(i+1 ) & 15]; t = b ^ c; t &= d; a += md5_consts[0]; t ^= c; a += t; a = rotl(a,  5); a += b;
+        d += block[(i+6 ) & 15]; t = a ^ b; t &= c; d += md5_consts[1]; t ^= b; d += t; d = rotl(d,  9); d += a;
+        c += block[(i+11) & 15]; t = d ^ a; t &= b; c += md5_consts[2]; t ^= a; c += t; c = rotl(c, 14); c += d;
+        b += block[(i+0 ) & 15]; t = c ^ d; t &= a; b += md5_consts[3]; t ^= d; b += t; b = rotl(b, 20); b += c;
+        md5_consts += 4
 
 	# Round 3
-    for i,const_i in zip([0, -4, -8, -12], [0, 4, 8, 12]):
-        a += block[(i+5 +16) & 15]; t = c ^ d; a += md5_consts[const_i+0+32]; t ^= b; a += t; a = rotl(a,  4); a += b;
-        d += block[(i+8 +16) & 15]; t = b ^ c; d += md5_consts[const_i+1+32]; t ^= a; d += t; d = rotl(d, 11); d += a;
-        c += block[(i+11+16) & 15]; t = a ^ b; c += md5_consts[const_i+2+32]; t ^= d; c += t; c = rotl(c, 16); c += d;
-        b += block[(i+14+16) & 15]; t = d ^ a; b += md5_consts[const_i+3+32]; t ^= c; b += t; b = rotl(b, 23); b += c;
+    for i in [0, -4, -8, -12]:
+        a += block[(i+5 +16) & 15]; t = c ^ d; a += md5_consts[0]; t ^= b; a += t; a = rotl(a,  4); a += b;
+        d += block[(i+8 +16) & 15]; t = b ^ c; d += md5_consts[1]; t ^= a; d += t; d = rotl(d, 11); d += a;
+        c += block[(i+11+16) & 15]; t = a ^ b; c += md5_consts[2]; t ^= d; c += t; c = rotl(c, 16); c += d;
+        b += block[(i+14+16) & 15]; t = d ^ a; b += md5_consts[3]; t ^= c; b += t; b = rotl(b, 23); b += c;
+        md5_consts += 4
 
 	# Round 4
-    for i,const_i in zip([0, 12, 24, 36], [0, 4, 8, 12]):
-        a += block[(i+0 ) & 15]; t = ~d; a += md5_consts[const_i+0+48]; t |= b; t ^= c; a += t; a = rotl(a,  6); a += b;
-        d += block[(i+7 ) & 15]; t = ~c; d += md5_consts[const_i+1+48]; t |= a; t ^= b; d += t; d = rotl(d, 10); d += a;
-        c += block[(i+14) & 15]; t = ~b; c += md5_consts[const_i+2+48]; t |= d; t ^= a; c += t; c = rotl(c, 15); c += d;
-        b += block[(i+5 ) & 15]; t = ~a; b += md5_consts[const_i+3+48]; t |= c; t ^= d; b += t; b = rotl(b, 21); b += c;
+    ONES = Vector(c_type=uint32_t, is_constant=True, constant_value=0xffffffff)
+    for i in [0, 12, 24, 36]:
+        a += block[(i+0 ) & 15]; t = d ^ ONES; a += md5_consts[0]; t |= b; t ^= c; a += t; a = rotl(a,  6); a += b;
+        d += block[(i+7 ) & 15]; t = c ^ ONES; d += md5_consts[1]; t |= a; t ^= b; d += t; d = rotl(d, 10); d += a;
+        c += block[(i+14) & 15]; t = b ^ ONES; c += md5_consts[2]; t |= d; t ^= a; c += t; c = rotl(c, 15); c += d;
+        b += block[(i+5 ) & 15]; t = a ^ ONES; b += md5_consts[3]; t |= c; t ^= d; b += t; b = rotl(b, 21); b += c;
+        md5_consts += 4
         
     # Save state
-    state[0] += a;
-    state[1] += b;
-    state[2] += c;
-    state[3] += d;
+    state[0] += a
+    state[1] += b
+    state[2] += c
+    state[3] += d
 
 with Function(void)(state, block) as md5_block_:
     # Load state
@@ -76,38 +83,44 @@ with Function(void)(state, block) as md5_block_:
     d = state[3]
 
     # Round 1
-    for i in range(0, 16, 4):
-        a += block[i+0]; a += (d ^ (b & (c ^ d))); a += md5_consts[i+0]; a = rotl(a,  7); a += b;
-        d += block[i+1]; d += (c ^ (a & (b ^ c))); d += md5_consts[i+1]; d = rotl(d, 12); d += a;
-        c += block[i+2]; c += (b ^ (d & (a ^ b))); c += md5_consts[i+2]; c = rotl(c, 17); c += d;
-        b += block[i+3]; b += (a ^ (c & (d ^ a))); b += md5_consts[i+3]; b = rotl(b, 22); b += c;
+    with Repeat(4):
+        a += block[0]; t = ternary_logic(d, c, b, 0xd8); a += md5_consts[0]; a += t; a = rotl(a,  7); a += b;
+        d += block[1]; t = ternary_logic(c, b, a, 0xd8); d += md5_consts[1]; d += t; d = rotl(d, 12); d += a;
+        c += block[2]; t = ternary_logic(b, a, d, 0xd8); c += md5_consts[2]; c += t; c = rotl(c, 17); c += d;
+        b += block[3]; t = ternary_logic(a, d, c, 0xd8); b += md5_consts[3]; b += t; b = rotl(b, 22); b += c;
+        block += 4
+        md5_consts += 4
+    block -= 4 * 4
 
 	# Round 2
     for i in range(0, 16, 4):
-        a += block[(i+1 ) & 15]; a += (c ^ (d & (b ^ c))); a += md5_consts[i+0+16]; a = rotl(a,  5); a += b;
-        d += block[(i+6 ) & 15]; d += (b ^ (c & (a ^ b))); d += md5_consts[i+1+16]; d = rotl(d,  9); d += a;
-        c += block[(i+11) & 15]; c += (a ^ (b & (d ^ a))); c += md5_consts[i+2+16]; c = rotl(c, 14); c += d;
-        b += block[(i+0 ) & 15]; b += (d ^ (a & (c ^ d))); b += md5_consts[i+3+16]; b = rotl(b, 20); b += c;
+        a += block[(i+1 ) & 15]; t = ternary_logic(c, b, d, 0xd8); a += md5_consts[0]; a += t; a = rotl(a,  5); a += b;
+        d += block[(i+6 ) & 15]; t = ternary_logic(b, a, c, 0xd8); d += md5_consts[1]; d += t; d = rotl(d,  9); d += a;
+        c += block[(i+11) & 15]; t = ternary_logic(a, d, b, 0xd8); c += md5_consts[2]; c += t; c = rotl(c, 14); c += d;
+        b += block[(i+0 ) & 15]; t = ternary_logic(d, c, a, 0xd8); b += md5_consts[3]; b += t; b = rotl(b, 20); b += c;
+        md5_consts += 4
 
 	# Round 3
-    for i,const_i in zip([0, -4, -8, -12], [0, 4, 8, 12]):
-        a += block[(i+5 +16) & 15]; a += (b ^ c ^ d); a += md5_consts[const_i+0+32]; a = rotl(a,  4); a += b;
-        d += block[(i+8 +16) & 15]; d += (a ^ b ^ c); d += md5_consts[const_i+1+32]; d = rotl(d, 11); d += a;
-        c += block[(i+11+16) & 15]; c += (d ^ a ^ b); c += md5_consts[const_i+2+32]; c = rotl(c, 16); c += d;
-        b += block[(i+14+16) & 15]; b += (c ^ d ^ a); b += md5_consts[const_i+3+32]; b = rotl(b, 23); b += c;
+    for i in [0, -4, -8, -12]:
+        a += block[(i+5 +16) & 15]; t = ternary_logic(d, c, b, 0x96); a += md5_consts[0]; a += t; a = rotl(a,  4); a += b;
+        d += block[(i+8 +16) & 15]; t = ternary_logic(c, b, a, 0x96); d += md5_consts[1]; d += t; d = rotl(d, 11); d += a;
+        c += block[(i+11+16) & 15]; t = ternary_logic(b, a, d, 0x96); c += md5_consts[2]; c += t; c = rotl(c, 16); c += d;
+        b += block[(i+14+16) & 15]; t = ternary_logic(a, d, c, 0x96); b += md5_consts[3]; b += t; b = rotl(b, 23); b += c;
+        md5_consts += 4
 
 	# Round 4
-    for i,const_i in zip([0, 12, 24, 36], [0, 4, 8, 12]):
-        a += block[(i+0 ) & 15]; a += (c ^ (b | ~d)); a += md5_consts[const_i+0+48]; a = rotl(a,  6); a += b;
-        d += block[(i+7 ) & 15]; d += (b ^ (a | ~c)); d += md5_consts[const_i+1+48]; d = rotl(d, 10); d += a;
-        c += block[(i+14) & 15]; c += (a ^ (d | ~b)); c += md5_consts[const_i+2+48]; c = rotl(c, 15); c += d;
-        b += block[(i+5 ) & 15]; b += (d ^ (c | ~a)); b += md5_consts[const_i+3+48]; b = rotl(b, 21); b += c;
+    for i in [0, 12, 24, 36]:
+        a += block[(i+0 ) & 15]; t = ternary_logic(b, c, d, 0x39); a += md5_consts[0]; a += t; a = rotl(a,  6); a += b;
+        d += block[(i+7 ) & 15]; t = ternary_logic(a, b, c, 0x39); d += md5_consts[1]; d += t; d = rotl(d, 10); d += a;
+        c += block[(i+14) & 15]; t = ternary_logic(d, a, b, 0x39); c += md5_consts[2]; c += t; c = rotl(c, 15); c += d;
+        b += block[(i+5 ) & 15]; t = ternary_logic(c, d, a, 0x39); b += md5_consts[3]; b += t; b = rotl(b, 21); b += c;
+        md5_consts += 4
         
     # Save state
-    state[0] += a;
-    state[1] += b;
-    state[2] += c;
-    state[3] += d;
+    state[0] += a
+    state[1] += b
+    state[2] += c
+    state[3] += d
     
 # Define targets
 md5_block.targets  = [Target.PLAIN_C, Target.SSE2, Target.AVX, Target.AVX2]
