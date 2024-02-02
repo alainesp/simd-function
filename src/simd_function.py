@@ -952,7 +952,7 @@ ALIGN 64
                     for var in func.global_vars:
                         global_variables_definition.add(var.to_definition(target))
             
-            output.writelines(['static ' + s for s in global_variables_definition])
+            output.writelines([s.replace('alignas(64)', 'alignas(64) static') for s in global_variables_definition])
             
         # begin of code
         if is_masm_file:
@@ -1088,7 +1088,9 @@ gtest_discover_tests(runUnitTests)
 ''')
             if len(avx_targets) > 0:
                 cmakelist.write('if(CMAKE_COMPILER_IS_GNUCXX)\n')
-                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS -mavx512f)\n')
+                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS -mavx512f)\n')    
+                cmakelist.write('elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")\n')
+                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS "-mavx2 -flto -fomit-frame-pointer -O3 -DNDEBUG")\n')
                 cmakelist.write('elseif(GLM_USE_INTEL)\n')
                 cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS /QxAVX512f)\n')
                 cmakelist.write('elseif(MSVC)\n')
