@@ -298,7 +298,7 @@ static SIMD_INLINE Vec128f32 Set(const float    value) noexcept { return vdupq_n
 #endif
 
 #if SIMD_ARCH_X86
-template<class T, class Vector> static SIMD_INLINE Vector Set(const T value) noexcept {}
+template<class ScalarType, class VectorType> static SIMD_INLINE VectorType Set(const ScalarType value) noexcept {}
 // SSE2
 template<> SIMD_INLINE Vec128u8  Set(const uint8_t  value) noexcept { return _mm_set1_epi8  (value); }
 template<> SIMD_INLINE Vec128i8  Set(const int8_t   value) noexcept { return _mm_set1_epi8  (value); }

@@ -147,8 +147,11 @@ class LoadInstruction(Instruction):
         self.index = index
     
     def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
+        
+        memory_name = f'{self.memory.name}'#{f'_{target.name.lower()}' if self.memory.is_global else ''}'
+        
         if target == Target.PLAIN_C or isinstance(self.memory, ScalarMemoryArray):
-            memory_expression = f'{self.memory.name}[{self.index}]'
+            memory_expression = f'{memory_name}[{self.index}]'
             if self.result.is_tmp():
                 return memory_expression
             else:
@@ -156,7 +159,7 @@ class LoadInstruction(Instruction):
             
         # Load data instruction
         if target == Target.MASM64_AVX or target == Target.MASM64_AVX2:
-            memory_expression = f'[{self.memory.name} + {self.index}*REG_BYTE_SIZE]'
+            memory_expression = f'[{memory_name} + {self.index}*REG_BYTE_SIZE]'
             if self.result.is_tmp():
                 return memory_expression
             else:
@@ -170,7 +173,7 @@ class LoadInstruction(Instruction):
                (target == Target.AVX512 and self.memory.alignment < 64):
                 aligment_str = 'u'
             # Expresion
-            memory_expression = f'load{aligment_str}({self.memory.name} + {self.index:2})'
+            memory_expression = f'load{aligment_str}({memory_name} + {self.index:2})'
             if self.result.is_tmp():
                 return memory_expression
             else:
@@ -200,12 +203,15 @@ class StoreInstruction(Instruction):
         return self.operand == value
     
     def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
+        
+        memory_name = f'{self.memory.name}'#{f'_{target.name.lower()}' if self.memory.is_global else ''}'
+        
         if target == Target.PLAIN_C or isinstance(self.memory, ScalarMemoryArray):
-            memory_expression = f'{self.memory.name}[{self.index}]'
+            memory_expression = f'{memory_name}[{self.index}]'
             return f'{memory_expression} = {get_expresion(self.operand, target, instruction_by_tmp)};'
         
         if target == Target.MASM64_AVX or target == Target.MASM64_AVX2:
-            memory_expression = f'[{self.memory.name} + {self.index}*REG_BYTE_SIZE]'
+            memory_expression = f'[{memory_name} + {self.index}*REG_BYTE_SIZE]'
             return f'vmovdq{'a' if self.memory.alignment >= 16 else 'u'} {get_reg_simd_name(target)}word ptr {memory_expression}, {self.operand.name}\n'
         else:
             # Load data instruction
@@ -217,7 +223,7 @@ class StoreInstruction(Instruction):
                (target == Target.AVX512 and self.memory.alignment < 64):
                 aligment_str = 'u'
             # Expresion
-            return f'store{aligment_str}({self.memory.name} + {self.index:2}, {get_expresion(self.operand, target, instruction_by_tmp)});'
+            return f'store{aligment_str}({memory_name} + {self.index:2}, {get_expresion(self.operand, target, instruction_by_tmp)});'
  
 class UnaryInstruction(Instruction):
     operand: 'Scalar | Vector | int | float'
@@ -546,6 +552,7 @@ class Function:
     targets: list[Target]
     parallelization_factor: dict[Target, list[int]]
     exited: bool = False
+    global_vars: set
     
     def __init__(self, result_type: ctype = void, targets: list[Target] = default_targets):
         self.result_type = result_type
@@ -553,6 +560,7 @@ class Function:
         self.instructions = []
         self.targets = targets
         self.parallelization_factor = {}
+        self.global_vars = set()
         for target in Target:
             self.parallelization_factor[target] = [1]
     
@@ -591,9 +599,7 @@ class Function:
         
         param_separator: str = ''
         for arg in self.params:
-            param_prefix = f'const ' if isinstance(arg, MemoryArray) and arg.is_const else ''
-            param_suffix = f'[{arg.num_elems}]' if isinstance(arg, MemoryArray) else ''
-            result += f'{param_separator}{param_prefix}{get_type(arg, target)} {arg.name}{param_suffix}'
+            result += f'{param_separator}{arg.to_definition(target)}'
             param_separator = ', '
             
         return result + ')'
@@ -727,16 +733,18 @@ class Function:
                         # Variables
                         if self.instructions[i].result and self.instructions[i].result.name:
                             if isinstance(self.instructions[i].result, MemoryArray):
-                                self.instructions[i].operand2 *= parallel_factor
-                                for p in range(1, parallel_factor):
-                                    self.instructions[i + p].is_nope = True
+                                if self.instructions[i].result.is_parallelizable:
+                                    self.instructions[i].operand2 *= parallel_factor
+                                    for p in range(1, parallel_factor):
+                                        self.instructions[i + p].is_nope = True
                             else:
                                 for p in range(parallel_factor):
                                     self.instructions[i + p].result.name += f'{p}'
                         # Memory access
                         if isinstance(self.instructions[i], LoadInstruction) or isinstance(self.instructions[i], StoreInstruction):
-                            for p in range(parallel_factor):
-                                self.instructions[i + p].index = self.instructions[i + p].index * parallel_factor + p
+                            if self.instructions[i].memory.is_parallelizable:
+                                for p in range(parallel_factor):
+                                    self.instructions[i + p].index = self.instructions[i + p].index * parallel_factor + p
                 ########################################################################################
                     
                 # Find the instruction by the result
@@ -764,7 +772,16 @@ class Function:
                                 else:
                                     output.write(f'{";\n" if last_type else ""}\t{new_type} {instruction.result.name}')
                                     last_type = new_type
-                        output.write(';\n\n')
+                                    
+                        output.write(';\n')
+                        
+                        # Globals
+                        for v in self.global_vars:
+                            if isinstance(v, MemoryArray):
+                                ptr_type = f'{'const ' if v.is_const else ''}{get_type(v, target)}*'
+                                output.write(f'\t{ptr_type} {v.name} = reinterpret_cast<{ptr_type}>({v.name}_{target.name.lower()});\n')
+                                
+                        output.write('\n')
                         
                     case Target.MASM64_AVX | Target.MASM64_AVX2:
                         x64_abi_params = ['rcx', 'rdx', 'r8', 'r9']
@@ -925,6 +942,17 @@ ALIGN 64
                 #         # TODO Support more int types
                 #         operand2_expression = f'_mm{'' if target == Target.SSE2 else '256'}_set1_{get_vector_ins_sizeof('', self.operand1.c_type)}({operand2_expression})'
                 #         output.write(f'static const const_{hex(constant)} = ;\n')
+            
+        # Globals
+        if not is_header:
+            output.write('\n')
+            global_variables_definition = set()
+            for func in functions:
+                for target in func.targets:
+                    for var in func.global_vars:
+                        global_variables_definition.add(var.to_definition(target))
+            
+            output.writelines(['static ' + s for s in global_variables_definition])
             
         # begin of code
         if is_masm_file:
@@ -1191,6 +1219,7 @@ class Variable:
     line_vector_definition: int = 0
     name: str = ''
     constant_value: int | float = 0
+    is_parallelizable: bool = True
     
     def __init__(self, c_type: ctype, is_constant: bool = False, constant_value: int = 0, is_uninitialize: bool = True):
         self.line_function_definition = get_line_number()
@@ -1364,11 +1393,42 @@ class MemoryArray:
     num_elems: int
     name: str = ''
     is_const: bool = True
+    initial_values: list[int | float]
+    is_global: bool
+    is_parallelizable: bool
+    print_as_hex: bool = True
     
-    def __init__(self, c_type: ctype, num_elems: int):
+    def __init__(self, c_type: ctype, num_elems: int = 0, initial_values: list[int | float] = None, is_global: bool = False, is_parallelizable: bool = True):
         self.c_type = c_type
         self.num_elems = num_elems
+        self.initial_values = initial_values
+        self.is_global = is_global
+        self.is_parallelizable = is_parallelizable
+        if initial_values:
+            self.num_elems = max(num_elems, len(initial_values))
         
+    def to_definition(self, target: Target) -> str:
+        param_prefix = 'const ' if self.is_const else ''
+        
+        if self.initial_values:
+            num_elements = max(self.num_elems, len(self.initial_values)) * target_simd_size(target)
+            name_suffix = f'_{target.name.lower()}' if self.is_global else ''
+            result = f'alignas(64) {param_prefix}{get_type(self.c_type, target)} {self.name}{name_suffix}[{num_elements}] = ' + '{'
+            
+            for i, elem in zip(range(len(self.initial_values)), self.initial_values):
+                #if (i & 7) == 0:
+                result += '\n\t'
+                
+                if self.print_as_hex:
+                    result += f'{hex(elem)}, ' *  target_simd_size(target)
+                else:
+                    result += f'{elem}, ' *  target_simd_size(target)
+                
+            result += '\n};\n'
+            return result
+        else:
+            return f'{param_prefix}{get_type(self, target)} {self.name}[{self.num_elems}]'
+            
     def is_tmp(self) -> bool:
         return not self.name
     
@@ -1396,6 +1456,8 @@ class MemoryArray:
         else:
             raise TypeError
         defined_functions[-1].instructions.append(LoadInstruction(result, memory=self, index=index))
+        if self.is_global:
+            defined_functions[-1].global_vars.add(self)
         return result
     
     def __setitem__(self, index, value):
@@ -1407,6 +1469,8 @@ class MemoryArray:
         
         assert value.c_type == self.c_type
         defined_functions[-1].instructions.append(StoreInstruction(operand=value, memory=self, index=index))
+        if self.is_global:
+            defined_functions[-1].global_vars.add(self)
         
     def __add__(self, other):
         self.find_name()
