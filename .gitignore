@@ -174,3 +174,4 @@ cython_debug/
 /tests/md5.cpp
 /tests/md5.h
 /tests/md5_avx.cpp
+/tests/md5_avx512.cpp

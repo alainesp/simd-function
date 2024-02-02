@@ -249,12 +249,13 @@ class UnaryInstruction(Instruction):
     def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
         operand_expression = f'{self.c_operator}({get_expresion(self.operand, target, instruction_by_tmp)})'
         match target:
-            case Target.PLAIN_C:
+            case Target.MASM64_AVX | Target.MASM64_AVX2:
+                raise NotImplementedError
+            case _: 
                 if self.result.is_tmp():
                     return operand_expression
                 else:
                     return f'{self.result.name} = {operand_expression};'
-            case _: raise NotImplementedError
             
 class ReturnInstruction(UnaryInstruction):
     def __init__(self, operand) -> None:
@@ -423,6 +424,10 @@ class TernaryLoginInstruction(BinaryInstruction):
         call_result = f'ternary_logic<{hex(self.imm8)}>({operand1_expression}, {operand2_expression}, {operand3_expression})'
         if self.result.is_tmp(): return call_result
         else: return f'{self.result.name} = {call_result};'
+
+class NotInstruction(UnaryInstruction):
+    def __init__(self, result, operand) -> None:
+        super().__init__(result, operand, '~')
         
 # Shift/Rotations
 class ShiftLInstruction(BinaryInstruction):
@@ -1014,16 +1019,15 @@ def generate_code(filename_root: str = None, include_tests: bool = True):
     # Group targets on the same file
     c_code_targets: set[Target] = set()
     avx_targets: set[Target] = set()
+    avx512_targets: set[Target] = set()
     masm64_targets: set[Target] = set()
     for func in defined_functions:
         for target in func.targets:
             match target:
-                case Target.PLAIN_C | Target.SSE2:
-                    c_code_targets.add(target)
-                case Target.AVX | Target.AVX2 | Target.AVX512:
-                    avx_targets.add(target)
-                case Target.MASM64_AVX | Target.MASM64_AVX2:
-                    masm64_targets.add(target)
+                case Target.PLAIN_C | Target.SSE2:           c_code_targets.add(target)
+                case Target.AVX | Target.AVX2:               avx_targets.add(target)
+                case Target.AVX512:                          avx512_targets.add(target)
+                case Target.MASM64_AVX | Target.MASM64_AVX2: masm64_targets.add(target)
                 case _: raise NotImplementedError   
     
     comments: list[Comment] = get_comments()
@@ -1032,11 +1036,10 @@ def generate_code(filename_root: str = None, include_tests: bool = True):
         filename_root = get_function_definition_filename().removesuffix('.py')
     
     # Generate code
-    generate_code_one_file(filename_root + ".h", c_code_targets | avx_targets | masm64_targets, comments)
-    if len(c_code_targets) > 0:
-        generate_code_one_file(filename_root + ".cpp", c_code_targets, comments)
-    if len(avx_targets) > 0:
-        generate_code_one_file(filename_root + "_avx.cpp", avx_targets, comments)
+    generate_code_one_file(filename_root + ".h", c_code_targets | avx_targets | avx512_targets | masm64_targets, comments)
+    if len(c_code_targets) > 0: generate_code_one_file(filename_root + ".cpp"       , c_code_targets, comments)
+    if len(avx_targets)    > 0: generate_code_one_file(filename_root + "_avx.cpp"   , avx_targets   , comments)
+    if len(avx512_targets) > 0: generate_code_one_file(filename_root + "_avx512.cpp", avx512_targets, comments)
     for comment in comments:
         comment.comment = comment.comment.replace('//', ';')
     if len(masm64_targets) > 0:
@@ -1045,14 +1048,23 @@ def generate_code(filename_root: str = None, include_tests: bool = True):
     # Generate Google Tests
     if include_tests:
         with open(path.dirname(filename_root) + '/CMakeLists.txt', 'w') as cmakelist:
+            # Save comments
+            line = 1
+            for comment in comments:
+                if comment.line == line:
+                    cmakelist.write(comment.comment.replace(';', '#'))
+                    line += 1
+                else:
+                    break
             cmakelist.write(
-'''
-###############################################################################################################
-# This file is part of 'Fast-Small-Crypto'
-###############################################################################################################
+'''# Automatically generated code by SIMD-function library
+
 cmake_minimum_required (VERSION 3.12)
 
-project (fast-small-crypto VERSION 1.0.0.0 DESCRIPTION "Fast crypto implementations for small data" LANGUAGES C CXX ASM_MASM)
+''')
+            cmakelist.write(f'project ({Path(filename_root).name} VERSION 1.0.0.0 DESCRIPTION "Google Test and Benchmark the automatically generated code" LANGUAGES CXX ASM_MASM)')
+            cmakelist.write(
+'''
 
 # Enable Hot Reload for MSVC compilers if supported.
 if (POLICY CMP0141)
@@ -1073,10 +1085,11 @@ FetchContent_MakeAvailable(googletest wy)
 
 enable_testing()
 ''')
-            cmakelist.write(f'add_executable(runUnitTests tests_{Path(filename_root).name}.cpp "../src/cpuid.cpp" "{Path(filename_root).name}.cpp" {'' if len(avx_targets) == 0 else f'{Path(filename_root).name}_avx.cpp'})\n')
+            cmakelist.write(f'add_executable(runUnitTests tests_{Path(filename_root).name}.cpp "../src/cpuid.cpp" "{Path(filename_root).name}.cpp" {\
+                '' if len(avx_targets)    == 0 else f'"{Path(filename_root).name}_avx.cpp"'} {\
+                '' if len(avx512_targets) == 0 else f'"{Path(filename_root).name}_avx512.cpp"'})\n')
             cmakelist.write(
-'''
-set_property(TARGET runUnitTests PROPERTY CXX_STANDARD 20) # C++ language to use
+'''set_property(TARGET runUnitTests PROPERTY CXX_STANDARD 20) # C++ language to use
 target_link_libraries(runUnitTests PRIVATE gtest_main wy)
 
 include(GoogleTest)
@@ -1088,16 +1101,25 @@ gtest_discover_tests(runUnitTests)
 ''')
             if len(avx_targets) > 0:
                 cmakelist.write('if(CMAKE_COMPILER_IS_GNUCXX)\n')
-                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS -mavx512f)\n')    
+                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS -mavx2)\n')
+                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS -mavx512f)\n')
+                
                 cmakelist.write('elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")\n')
                 cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS "-mavx2 -flto -fomit-frame-pointer -O3 -DNDEBUG")\n')
+                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS "-mavx512f -flto -fomit-frame-pointer -O3 -DNDEBUG")\n')
+                
                 cmakelist.write('elseif(GLM_USE_INTEL)\n')
-                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS /QxAVX512f)\n')
+                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS /QxAVX)\n')
+                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS /QxAVX512f)\n')
+                
                 cmakelist.write('elseif(MSVC)\n')
                 cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS /arch:AVX)\n')
-                cmakelist.write('endif()\n')
+                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS /arch:AVX512)\n')
+                cmakelist.write('endif()\n\n')
                 
-            cmakelist.write(f'add_executable(runBenchmark "benchmark_{Path(filename_root).name}.cpp" "../src/cpuid.cpp" "arch_x64.asm" "{Path(filename_root).name}.cpp" {'' if len(avx_targets) == 0 else f'{Path(filename_root).name}_avx.cpp'})')      
+            cmakelist.write(f'add_executable(runBenchmark "benchmark_{Path(filename_root).name}.cpp" "../src/cpuid.cpp" "arch_x64.asm" "{Path(filename_root).name}.cpp" {\
+                '' if len(avx_targets)    == 0 else f'"{Path(filename_root).name}_avx.cpp"'} {\
+                '' if len(avx512_targets) == 0 else f'"{Path(filename_root).name}_avx512.cpp"'})')      
 
             cmakelist.write(
 '''
@@ -1333,7 +1355,21 @@ class Variable:
     # –	__neg__(self)
     # +	__pos__(self)
     def __invert__(self):# ~
-        return self._binary_op(0xffffffff, operator.__xor__, XorInstruction)
+        self.perform_checks(self)
+        
+        # Constant folding
+        if self.is_constant:
+            self.constant_value = ~self.constant_value
+            return self
+        
+        self.find_name()
+        
+        if   isinstance(self, Vector): result = Vector(self.c_type, is_uninitialize=False)
+        elif isinstance(self, Scalar): result = Scalar(self.c_type, is_uninitialize=False)
+        else: raise TypeError
+        
+        defined_functions[-1].instructions.append(NotInstruction(result, self))
+        return result
     
 class Vector(Variable):
     pass

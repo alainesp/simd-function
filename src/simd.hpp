@@ -521,6 +521,29 @@ static SIMD_INLINE Vec512Int operator^(const Vec512Int a, const uint64_t b) noex
 template<class Vector, class T> static SIMD_INLINE Vector operator^=(Vector& a, const T b) noexcept { return (a = a ^ b); }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Not
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#if SIMD_ARCH_ARM
+// Neon
+template<class Vector> static SIMD_INLINE Vector operator~(const Vector a) noexcept { return vmvnq_u32(a); }
+#endif
+
+#if SIMD_ARCH_X86
+// SSE2
+static SIMD_INLINE Vec128Int operator~(const Vec128Int a) noexcept { return _mm_xor_si128(a, Set<uint32_t, Vec128Int>(0xFFFFFFFF)); }
+static SIMD_INLINE Vec128f32 operator~(const Vec128f32 a) noexcept { return _mm_xor_ps   (a, Set<uint32_t, Vec128Int>(0xFFFFFFFF)); }
+static SIMD_INLINE Vec128f64 operator~(const Vec128f64 a) noexcept { return _mm_xor_pd   (a, Set<uint32_t, Vec128Int>(0xFFFFFFFF)); }
+// AVX/AVX2
+static SIMD_INLINE Vec256Int operator~(const Vec256Int a) noexcept { return _mm256_xor_si256(a, Set<uint32_t, Vec256Int>(0xFFFFFFFF)); }
+static SIMD_INLINE Vec256f32 operator~(const Vec256f32 a) noexcept { return _mm256_xor_ps   (a, Set<uint32_t, Vec256Int>(0xFFFFFFFF)); }
+static SIMD_INLINE Vec256f64 operator~(const Vec256f64 a) noexcept { return _mm256_xor_pd   (a, Set<uint32_t, Vec256Int>(0xFFFFFFFF)); }
+// AVX512
+static SIMD_INLINE Vec512Int operator~(const Vec512Int a) noexcept { return _mm512_xor_si512(a, Set<uint32_t, Vec512Int>(0xFFFFFFFF)); }
+static SIMD_INLINE Vec512f32 operator~(const Vec512f32 a) noexcept { return _mm512_xor_ps   (a, Set<uint32_t, Vec512Int>(0xFFFFFFFF)); }
+static SIMD_INLINE Vec512f64 operator~(const Vec512f64 a) noexcept { return _mm512_xor_pd   (a, Set<uint32_t, Vec512Int>(0xFFFFFFFF)); }
+#endif
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Ternary Logic
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #if SIMD_ARCH_X86
