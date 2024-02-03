@@ -44,10 +44,10 @@ with Function(void)(state, block) as md4_block:
 
     # Round 3
     for i in [0, 2, 1, 3]:
-        a += block[i +  0]; t = b ^ c; a += 0x6ed9eba1; a += t ^ d;     t = a <<  3; a >>= (32 -  3); a |= t;
-        d += block[i +  8];            d += 0x6ed9eba1; d += t ^ a;     t = d <<  9; d >>= (32 -  9); d |= t;
-        c += block[i +  4]; t = a ^ d; c += 0x6ed9eba1; c += t ^ b;     t = c << 11; c >>= (32 - 11); c |= t;
-        b += block[i + 12];            b += 0x6ed9eba1; b += t ^ c;     t = b << 15; b >>= (32 - 15); b |= t;
+        a += block[i +  0]; t = b ^ c; a += 0x6ed9eba1; a += t ^ d;     tt = a <<  3; a >>= (32 -  3); a |= tt;
+        d += block[i +  8];            d += 0x6ed9eba1; d += t ^ a;     tt = d <<  9; d >>= (32 -  9); d |= tt;
+        c += block[i +  4]; t = a ^ d; c += 0x6ed9eba1; c += t ^ b;     tt = c << 11; c >>= (32 - 11); c |= tt;
+        b += block[i + 12];            b += 0x6ed9eba1; b += t ^ c;     tt = b << 15; b >>= (32 - 15); b |= tt;
         
     # Save state
     state[0] += a

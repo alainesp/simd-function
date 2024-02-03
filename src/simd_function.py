@@ -1099,23 +1099,22 @@ gtest_discover_tests(runUnitTests)
 # Benchmark
 ###############################################################################################################
 ''')
-            if len(avx_targets) > 0:
-                cmakelist.write('if(CMAKE_COMPILER_IS_GNUCXX)\n')
-                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS -mavx2)\n')
-                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS -mavx512f)\n')
-                
-                cmakelist.write('elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")\n')
-                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS "-mavx2 -flto -fomit-frame-pointer -O3 -DNDEBUG")\n')
-                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS "-mavx512f -flto -fomit-frame-pointer -O3 -DNDEBUG")\n')
-                
-                cmakelist.write('elseif(GLM_USE_INTEL)\n')
-                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS /QxAVX)\n')
-                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS /QxAVX512f)\n')
-                
-                cmakelist.write('elseif(MSVC)\n')
-                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp PROPERTIES COMPILE_FLAGS /arch:AVX)\n')
-                cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS /arch:AVX512)\n')
-                cmakelist.write('endif()\n\n')
+            cmakelist.write('if(CMAKE_COMPILER_IS_GNUCXX)\n')
+            if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS -mavx2)\n')
+            if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS -mavx512f)\n')
+            
+            cmakelist.write('elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")\n')
+            if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS "-mavx2 -flto -fomit-frame-pointer -O3 -DNDEBUG")\n')
+            if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS "-mavx512f -flto -fomit-frame-pointer -O3 -DNDEBUG")\n')
+            
+            cmakelist.write('elseif(GLM_USE_INTEL)\n')
+            if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS /QxAVX)\n')
+            if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS /QxAVX512F)\n')
+            
+            cmakelist.write('elseif(MSVC)\n')
+            if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS /arch:AVX)\n')
+            if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS /arch:AVX512F)\n')
+            cmakelist.write('endif()\n\n')
                 
             cmakelist.write(f'add_executable(runBenchmark "benchmark_{Path(filename_root).name}.cpp" "../src/cpuid.cpp" "arch_x64.asm" "{Path(filename_root).name}.cpp" {\
                 '' if len(avx_targets)    == 0 else f'"{Path(filename_root).name}_avx.cpp"'} {\
@@ -1141,44 +1140,57 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
                         tests.write('\n{\n')
                         tests.write(f'\tif (!simd::cpu_supports(simd::CpuFeatures::{target.name}))\n\t\tGTEST_SKIP() << "No {target.name}";\n\n')
                         tests.write(f'\tconstexpr size_t parallel_factor = {parallel_factor};\n')
-                        tests.write(f'\tconstexpr size_t parallelism = parallel_factor * sizeof({get_type(func.params[0], target)}) / sizeof(uint32_t);\n')                  
-                        tests.write('''
-	uint32_t state0[4 * parallelism];
-	uint32_t message0[16 * parallelism];
+                        tests.write(f'\tconstexpr size_t parallelism = parallel_factor * sizeof({get_type(func.params[0], target)}) / sizeof(uint32_t);\n')
+                        tests.write('\n')
+                        
+                        # Function params declaration
+                        for arg in func.params:
+                            param_suffix = f'[{arg.num_elems} * parallelism]' if isinstance(arg, MemoryArray) else ''
+                            tests.write(f'\t{get_type(arg.c_type, target)} {arg.name}{param_suffix};\n')
 
-''')
-                        tests.write(f'\t{get_type(func.params[0], target)} state1[4 * parallel_factor];\n')
-                        tests.write(f'\t{get_type(func.params[1], target)} message1[16 * parallel_factor];\n')
+                            param_suffix = f'[{arg.num_elems} * parallel_factor]' if isinstance(arg, MemoryArray) else ''
+                            tests.write(f'\t{get_type(arg, target)} {arg.name}_simd{param_suffix};\n')
+                            
+                            tests.write(f'\tASSERT_EQ(sizeof({arg.name}), sizeof({arg.name}_simd));\n')                    
+                        
                         tests.write('''
-	ASSERT_EQ(sizeof(state0), sizeof(state1));
-	ASSERT_EQ(sizeof(message0), sizeof(message1));
-
 	// Create a pseudo-random generator
 	wy::rand r;
-	std::vector<uint32_t> random_values;
 
 	for (size_t i = 0; i < 64; i++)
 	{
-		r.generate_stream(random_values, std::size(state0) + std::size(message0));
-		std::copy(random_values.cbegin(), random_values.cbegin() + std::size(state0), state0);
-		std::copy(random_values.cbegin() + std::size(state0), random_values.cend(), message0);
-
-		// Copy values to simd
-		for (size_t j = 0; j < std::size(state0); j++)
-			reinterpret_cast<uint32_t*>(state1)[j / 4 + (j & 3) * parallelism] = state0[j];
-		for (size_t j = 0; j < std::size(message0); j++)
-			reinterpret_cast<uint32_t*>(message1)[j / 16 + (j & 15) * parallelism] = message0[j];
-
-		// Hash
-		for (size_t j = 0; j < parallelism; j++)
-			md5_transform(state0 + j * 4, message0 + j * 16);
 ''')
-                        tests.write(f'\t\t{func.name}_{target.name.lower()}{parallel_suffix}(state1, message1);')
+                        for arg in func.params:
+                            tests.write(f'\t\tr.generate_stream<{get_type(arg.c_type, target)}>({arg.name});\n')
+                            tests.write('\t\t// Copy values to simd\n')
+                            
+                            tests.write(f'\t\tfor (size_t j = 0; j < std::size({arg.name}); j++)\n')
+                            tests.write(f'\t\t\treinterpret_cast<{get_type(arg.c_type, target)}*>({arg.name}_simd)[j / {arg.num_elems} + (j % {arg.num_elems}) * parallelism] = {arg.name}[j];\n')
+  
                         tests.write('''
+		// Hash
+		for (size_t j = 0; j < parallelism; j++)\n''')
+                        tests.write(f'\t\t\t{Path(filename_root).name}_transform(')
+                        param_prefix = ''
+                        for arg in func.params:
+                            tests.write(f'{param_prefix}{arg.name} + j * {arg.num_elems}')
+                            param_prefix = ', '
+
+                        tests.write(f');\n\t\t{func.name}_{target.name.lower()}{parallel_suffix}(')
+                        param_prefix = ''
+                        for arg in func.params:
+                            tests.write(f'{param_prefix}{arg.name}_simd')
+                            param_prefix = ', '
+                        tests.write(''');
+
 		// Compare results
-		for (size_t j = 0; j < std::size(state0); j++)
-			ASSERT_EQ(reinterpret_cast<uint32_t*>(state1)[j / 4 + (j & 3) * parallelism], state0[j]);
-	}
+''')
+                        for arg in func.params:
+                            tests.write(f'\t\tfor (size_t j = 0; j < std::size({arg.name}); j++)\n')
+                            tests.write(f'\t\t\tASSERT_EQ(reinterpret_cast<{get_type(arg.c_type, target)}*>({arg.name}_simd)[j / {arg.num_elems} + (j % {arg.num_elems}) * parallelism], {arg.name}[j]);\n')
+                            
+                        tests.write(
+'''    }
 }
 ''')
             

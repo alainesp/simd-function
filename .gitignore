@@ -168,10 +168,9 @@ cython_debug/
 /tests/CMakeSettings.json
 /tests/md4.cpp
 /tests/md4.h
-/tests/md4_avx.cpp
+/tests/*_avx.cpp
+/tests/*_avx512.cpp
 /tests/tests_*.cpp
 /tests/reference_implementation.c
 /tests/md5.cpp
 /tests/md5.h
-/tests/md5_avx.cpp
-/tests/md5_avx512.cpp
