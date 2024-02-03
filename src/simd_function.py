@@ -618,7 +618,10 @@ class Function:
                 t0 = Vector(ins.result.c_type, is_uninitialize=False)
                 t1 = Vector(ins.result.c_type, is_uninitialize=False)
                 self.instructions.insert(i, ShiftRInstruction(t0, ins.operand1, sizeof(t0.c_type)*8-ins.operand2))
-                self.instructions.insert(i+1, ShiftLInstruction(t1, ins.operand1, ins.operand2))
+                if isinstance(ins.operand2, int) and ins.operand2 == 1:
+                    self.instructions.insert(i+1, AddInstruction(t1, ins.operand1, ins.operand1))
+                else:
+                    self.instructions.insert(i+1, ShiftLInstruction(t1, ins.operand1, ins.operand2))
                 self.instructions.insert(i+2, OrInstruction(ins.result, t1, t0))
                 self.instructions[i].line_number = ins.line_number
                 self.instructions[i+1].line_number = ins.line_number

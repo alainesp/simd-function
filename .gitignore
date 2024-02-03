@@ -174,3 +174,5 @@ cython_debug/
 /tests/reference_implementation.c
 /tests/md5.cpp
 /tests/md5.h
+/tests/sha1.cpp
+/tests/sha1.h
