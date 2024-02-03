@@ -1113,7 +1113,7 @@ gtest_discover_tests(runUnitTests)
             
             cmakelist.write('elseif(MSVC)\n')
             if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS /arch:AVX)\n')
-            if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS /arch:AVX512F)\n')
+            if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS /arch:AVX512)\n')
             cmakelist.write('endif()\n\n')
                 
             cmakelist.write(f'add_executable(runBenchmark "benchmark_{Path(filename_root).name}.cpp" "../src/cpuid.cpp" "arch_x64.asm" "{Path(filename_root).name}.cpp" {\
@@ -1225,21 +1225,23 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
                         # Register the function as a benchmark
                         benchmark.write(f'BENCHMARK(BM_{func.name}_{target.name}{parallel_suffix});\n\n')
                     
+            benchmark.write(f'\n#define asm_func {Path(filename_root).name}_avx2_asm')
+            benchmark.write(f'\n#define bm_asm_func BM_{Path(filename_root).name}_avx2_asm')
             benchmark.write('''
 // My code
-extern "C" void crypt_md5_avx2_kernel_asm(__m256i state[12], __m256i block[48]);
-static void BM_crypt_md5_avx2_kernel_asm(benchmark::State& _benchmark_state) {
+extern "C" void asm_func(__m256i state[12], __m256i block[48]);
+static void bm_asm_func(benchmark::State& _benchmark_state) {
 	__m256i state[12];
 	__m256i block[48];
 	uint32_t num_calls = 0;
 
 	for (auto _ : _benchmark_state) {
-		crypt_md5_avx2_kernel_asm(state, block);
+		asm_func(state, block);
 		num_calls++;
 	}
-	_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * 24, benchmark::Counter::kIsRate);
+	_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * 16, benchmark::Counter::kIsRate);
 }
-BENCHMARK(BM_crypt_md5_avx2_kernel_asm);
+BENCHMARK(bm_asm_func);
 ''')
             
         

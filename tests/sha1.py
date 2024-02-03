@@ -22,6 +22,7 @@ with Function(void)(state, W) as sha1_block:
     D = state[3]
     E = state[4]
 
+    # Round 1
     E += rotl(A, 5) + (D ^ (B & (C ^ D))) + 0x5a827999 + W[0 ]; B = rotl(B, 30);
     D += rotl(E, 5) + (C ^ (A & (B ^ C))) + 0x5a827999 + W[1 ]; A = rotl(A, 30);
     C += rotl(D, 5) + (B ^ (E & (A ^ B))) + 0x5a827999 + W[2 ]; E = rotl(E, 30);
@@ -38,72 +39,88 @@ with Function(void)(state, W) as sha1_block:
     B += rotl(C, 5) + (A ^ (D & (E ^ A))) + 0x5a827999 + W[13]; D = rotl(D, 30);
     A += rotl(B, 5) + (E ^ (C & (D ^ E))) + 0x5a827999 + W[14]; C = rotl(C, 30);
     E += rotl(A, 5) + (D ^ (B & (C ^ D))) + 0x5a827999 + W[15]; B = rotl(B, 30);
-    W[0 ] = rotl(W[ 0] ^ W[13] ^ W[ 8] ^ W[2 ], 1);  D += rotl(E, 5) + (C ^ (A & (B ^ C))) + 0x5a827999 + W[0]; A = rotl(A, 30);
-    W[1 ] = rotl(W[ 1] ^ W[14] ^ W[ 9] ^ W[3 ], 1);  C += rotl(D, 5) + (B ^ (E & (A ^ B))) + 0x5a827999 + W[1]; E = rotl(E, 30);
-    W[2 ] = rotl(W[ 2] ^ W[15] ^ W[10] ^ W[4 ], 1);  B += rotl(C, 5) + (A ^ (D & (E ^ A))) + 0x5a827999 + W[2]; D = rotl(D, 30);
-    W[3 ] = rotl(W[ 3] ^ W[ 0] ^ W[11] ^ W[5 ], 1);  A += rotl(B, 5) + (E ^ (C & (D ^ E))) + 0x5a827999 + W[3]; C = rotl(C, 30);
+    for i in range(16):
+        t = W[i] ^ W[(i-3+16) & 15] ^ W[(i-8+16) & 15] ^ W[(i-14+16) & 15 ]
+        W[i] = rotl(t, 1)
+    D += rotl(E, 5) + (C ^ (A & (B ^ C))) + 0x5a827999 + W[0]; A = rotl(A, 30);
+    C += rotl(D, 5) + (B ^ (E & (A ^ B))) + 0x5a827999 + W[1]; E = rotl(E, 30);
+    B += rotl(C, 5) + (A ^ (D & (E ^ A))) + 0x5a827999 + W[2]; D = rotl(D, 30);
+    A += rotl(B, 5) + (E ^ (C & (D ^ E))) + 0x5a827999 + W[3]; C = rotl(C, 30);
 
-    W[4 ] = rotl(W[ 4] ^ W[1 ] ^ W[12] ^ W[ 6], 1);  E += rotl(A, 5) + (B ^ C ^ D) + 0x6ed9eba1 + W[4 ]; B = rotl(B, 30);
-    W[5 ] = rotl(W[ 5] ^ W[2 ] ^ W[13] ^ W[ 7], 1);  D += rotl(E, 5) + (A ^ B ^ C) + 0x6ed9eba1 + W[5 ]; A = rotl(A, 30);
-    W[6 ] = rotl(W[ 6] ^ W[3 ] ^ W[14] ^ W[ 8], 1);  C += rotl(D, 5) + (E ^ A ^ B) + 0x6ed9eba1 + W[6 ]; E = rotl(E, 30);
-    W[7 ] = rotl(W[ 7] ^ W[4 ] ^ W[15] ^ W[ 9], 1);  B += rotl(C, 5) + (D ^ E ^ A) + 0x6ed9eba1 + W[7 ]; D = rotl(D, 30);
-    W[8 ] = rotl(W[ 8] ^ W[5 ] ^ W[ 0] ^ W[10], 1);  A += rotl(B, 5) + (C ^ D ^ E) + 0x6ed9eba1 + W[8 ]; C = rotl(C, 30);
-    W[9 ] = rotl(W[ 9] ^ W[6 ] ^ W[ 1] ^ W[11], 1);  E += rotl(A, 5) + (B ^ C ^ D) + 0x6ed9eba1 + W[9 ]; B = rotl(B, 30);
-    W[10] = rotl(W[10] ^ W[7 ] ^ W[ 2] ^ W[12], 1);  D += rotl(E, 5) + (A ^ B ^ C) + 0x6ed9eba1 + W[10]; A = rotl(A, 30);
-    W[11] = rotl(W[11] ^ W[8 ] ^ W[ 3] ^ W[13], 1);  C += rotl(D, 5) + (E ^ A ^ B) + 0x6ed9eba1 + W[11]; E = rotl(E, 30);
-    W[12] = rotl(W[12] ^ W[9 ] ^ W[ 4] ^ W[14], 1);  B += rotl(C, 5) + (D ^ E ^ A) + 0x6ed9eba1 + W[12]; D = rotl(D, 30);
-    W[13] = rotl(W[13] ^ W[10] ^ W[ 5] ^ W[15], 1);  A += rotl(B, 5) + (C ^ D ^ E) + 0x6ed9eba1 + W[13]; C = rotl(C, 30);
-    W[14] = rotl(W[14] ^ W[11] ^ W[ 6] ^ W[ 0], 1);  E += rotl(A, 5) + (B ^ C ^ D) + 0x6ed9eba1 + W[14]; B = rotl(B, 30);
-    W[15] = rotl(W[15] ^ W[12] ^ W[ 7] ^ W[ 1], 1);  D += rotl(E, 5) + (A ^ B ^ C) + 0x6ed9eba1 + W[15]; A = rotl(A, 30);
-    W[0 ] = rotl(W[ 0] ^ W[13] ^ W[ 8] ^ W[ 2], 1);  C += rotl(D, 5) + (E ^ A ^ B) + 0x6ed9eba1 + W[0 ]; E = rotl(E, 30);
-    W[1 ] = rotl(W[ 1] ^ W[14] ^ W[ 9] ^ W[ 3], 1);  B += rotl(C, 5) + (D ^ E ^ A) + 0x6ed9eba1 + W[1 ]; D = rotl(D, 30);
-    W[2 ] = rotl(W[ 2] ^ W[15] ^ W[10] ^ W[ 4], 1);  A += rotl(B, 5) + (C ^ D ^ E) + 0x6ed9eba1 + W[2 ]; C = rotl(C, 30);
-    W[3 ] = rotl(W[ 3] ^ W[ 0] ^ W[11] ^ W[ 5], 1);  E += rotl(A, 5) + (B ^ C ^ D) + 0x6ed9eba1 + W[3 ]; B = rotl(B, 30);
-    W[4 ] = rotl(W[ 4] ^ W[ 1] ^ W[12] ^ W[ 6], 1);  D += rotl(E, 5) + (A ^ B ^ C) + 0x6ed9eba1 + W[4 ]; A = rotl(A, 30);
-    W[5 ] = rotl(W[ 5] ^ W[ 2] ^ W[13] ^ W[ 7], 1);  C += rotl(D, 5) + (E ^ A ^ B) + 0x6ed9eba1 + W[5 ]; E = rotl(E, 30);
-    W[6 ] = rotl(W[ 6] ^ W[ 3] ^ W[14] ^ W[ 8], 1);  B += rotl(C, 5) + (D ^ E ^ A) + 0x6ed9eba1 + W[6 ]; D = rotl(D, 30);
-    W[7 ] = rotl(W[ 7] ^ W[ 4] ^ W[15] ^ W[ 9], 1);  A += rotl(B, 5) + (C ^ D ^ E) + 0x6ed9eba1 + W[7 ]; C = rotl(C, 30);
-    W[ 8] = rotl(W[ 8] ^ W[ 5] ^ W[ 0] ^ W[10], 1);  E += rotl(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + W[ 8]; B = rotl(B, 30);
-    W[ 9] = rotl(W[ 9] ^ W[ 6] ^ W[ 1] ^ W[11], 1);  D += rotl(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + W[ 9]; A = rotl(A, 30);
-    W[10] = rotl(W[10] ^ W[ 7] ^ W[ 2] ^ W[12], 1);  C += rotl(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + W[10]; E = rotl(E, 30);
-    W[11] = rotl(W[11] ^ W[ 8] ^ W[ 3] ^ W[13], 1);  B += rotl(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + W[11]; D = rotl(D, 30);
-    W[12] = rotl(W[12] ^ W[ 9] ^ W[ 4] ^ W[14], 1);  A += rotl(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + W[12]; C = rotl(C, 30);
-    W[13] = rotl(W[13] ^ W[10] ^ W[ 5] ^ W[15], 1);  E += rotl(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + W[13]; B = rotl(B, 30);
-    W[14] = rotl(W[14] ^ W[11] ^ W[ 6] ^ W[ 0], 1);  D += rotl(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + W[14]; A = rotl(A, 30);
-    W[15] = rotl(W[15] ^ W[12] ^ W[ 7] ^ W[ 1], 1);  C += rotl(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + W[15]; E = rotl(E, 30);
-    W[ 0] = rotl(W[ 0] ^ W[13] ^ W[ 8] ^ W[ 2], 1);  B += rotl(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + W[ 0]; D = rotl(D, 30);
-    W[ 1] = rotl(W[ 1] ^ W[14] ^ W[ 9] ^ W[ 3], 1);  A += rotl(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + W[ 1]; C = rotl(C, 30);
-    W[ 2] = rotl(W[ 2] ^ W[15] ^ W[10] ^ W[ 4], 1);  E += rotl(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + W[ 2]; B = rotl(B, 30);
-    W[ 3] = rotl(W[ 3] ^ W[ 0] ^ W[11] ^ W[ 5], 1);  D += rotl(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + W[ 3]; A = rotl(A, 30);
-    W[ 4] = rotl(W[ 4] ^ W[ 1] ^ W[12] ^ W[ 6], 1);  C += rotl(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + W[ 4]; E = rotl(E, 30);
-    W[ 5] = rotl(W[ 5] ^ W[ 2] ^ W[13] ^ W[ 7], 1);  B += rotl(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + W[ 5]; D = rotl(D, 30);
-    W[ 6] = rotl(W[ 6] ^ W[ 3] ^ W[14] ^ W[ 8], 1);  A += rotl(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + W[ 6]; C = rotl(C, 30);
-    W[ 7] = rotl(W[ 7] ^ W[ 4] ^ W[15] ^ W[ 9], 1);  E += rotl(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + W[ 7]; B = rotl(B, 30);
-    W[ 8] = rotl(W[ 8] ^ W[ 5] ^ W[ 0] ^ W[10], 1);  D += rotl(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + W[ 8]; A = rotl(A, 30);
-    W[ 9] = rotl(W[ 9] ^ W[ 6] ^ W[ 1] ^ W[11], 1);  C += rotl(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + W[ 9]; E = rotl(E, 30);
-    W[10] = rotl(W[10] ^ W[ 7] ^ W[ 2] ^ W[12], 1);  B += rotl(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + W[10]; D = rotl(D, 30);
-    W[11] = rotl(W[11] ^ W[ 8] ^ W[ 3] ^ W[13], 1);  A += rotl(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + W[11]; C = rotl(C, 30);
-                      
-    W[12] = rotl(W[12] ^ W[ 9] ^ W[ 4] ^ W[14], 1);  E += rotl(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + W[12]; B = rotl(B, 30);
-    W[13] = rotl(W[13] ^ W[10] ^ W[ 5] ^ W[15], 1);  D += rotl(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + W[13]; A = rotl(A, 30);
-    W[14] = rotl(W[14] ^ W[11] ^ W[ 6] ^ W[ 0], 1);  C += rotl(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + W[14]; E = rotl(E, 30);
-    W[15] = rotl(W[15] ^ W[12] ^ W[ 7] ^ W[ 1], 1);  B += rotl(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + W[15]; D = rotl(D, 30);
-    W[ 0] = rotl(W[ 0] ^ W[13] ^ W[ 8] ^ W[ 2], 1);  A += rotl(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + W[ 0]; C = rotl(C, 30);
-    W[ 1] = rotl(W[ 1] ^ W[14] ^ W[ 9] ^ W[ 3], 1);  E += rotl(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + W[ 1]; B = rotl(B, 30);
-    W[ 2] = rotl(W[ 2] ^ W[15] ^ W[10] ^ W[ 4], 1);  D += rotl(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + W[ 2]; A = rotl(A, 30);
-    W[ 3] = rotl(W[ 3] ^ W[ 0] ^ W[11] ^ W[ 5], 1);  C += rotl(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + W[ 3]; E = rotl(E, 30);
-    W[ 4] = rotl(W[ 4] ^ W[ 1] ^ W[12] ^ W[ 6], 1);  B += rotl(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + W[ 4]; D = rotl(D, 30);
-    W[ 5] = rotl(W[ 5] ^ W[ 2] ^ W[13] ^ W[ 7], 1);  A += rotl(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + W[ 5]; C = rotl(C, 30);
-    W[ 6] = rotl(W[ 6] ^ W[ 3] ^ W[14] ^ W[ 8], 1);  E += rotl(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + W[ 6]; B = rotl(B, 30);
-    W[ 7] = rotl(W[ 7] ^ W[ 4] ^ W[15] ^ W[ 9], 1);  D += rotl(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + W[ 7]; A = rotl(A, 30);
-    W[ 8] = rotl(W[ 8] ^ W[ 5] ^ W[ 0] ^ W[10], 1);  C += rotl(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + W[ 8]; E = rotl(E, 30);
-    W[ 9] = rotl(W[ 9] ^ W[ 6] ^ W[ 1] ^ W[11], 1);  B += rotl(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + W[ 9]; D = rotl(D, 30);
-    W[10] = rotl(W[10] ^ W[ 7] ^ W[ 2] ^ W[12], 1);  A += rotl(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + W[10]; C = rotl(C, 30);
-    W[11] = rotl(W[11] ^ W[ 8] ^ W[ 3] ^ W[13], 1);  E += rotl(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + W[11]; B = rotl(B, 30);
-    W[12] = rotl(W[12] ^ W[ 9] ^ W[ 4] ^ W[14], 1);  D += rotl(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + W[12]; A = rotl(A, 30);
-    W[13] = rotl(W[13] ^ W[10] ^ W[ 5] ^ W[15], 1);  C += rotl(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + W[13]; E = rotl(E, 30);
-    W[14] = rotl(W[14] ^ W[11] ^ W[ 6] ^ W[ 0], 1);  B += rotl(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + W[14]; D = rotl(D, 30);
-    W[15] = rotl(W[15] ^ W[12] ^ W[ 7] ^ W[ 1], 1);  A += rotl(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + W[15]; C = rotl(C, 30);
+    # Round 2
+    E += rotl(A, 5) + (B ^ C ^ D) + 0x6ed9eba1 + W[4 ]; B = rotl(B, 30);
+    D += rotl(E, 5) + (A ^ B ^ C) + 0x6ed9eba1 + W[5 ]; A = rotl(A, 30);
+    C += rotl(D, 5) + (E ^ A ^ B) + 0x6ed9eba1 + W[6 ]; E = rotl(E, 30);
+    B += rotl(C, 5) + (D ^ E ^ A) + 0x6ed9eba1 + W[7 ]; D = rotl(D, 30);
+    A += rotl(B, 5) + (C ^ D ^ E) + 0x6ed9eba1 + W[8 ]; C = rotl(C, 30);
+    E += rotl(A, 5) + (B ^ C ^ D) + 0x6ed9eba1 + W[9 ]; B = rotl(B, 30);
+    D += rotl(E, 5) + (A ^ B ^ C) + 0x6ed9eba1 + W[10]; A = rotl(A, 30);
+    C += rotl(D, 5) + (E ^ A ^ B) + 0x6ed9eba1 + W[11]; E = rotl(E, 30);
+    B += rotl(C, 5) + (D ^ E ^ A) + 0x6ed9eba1 + W[12]; D = rotl(D, 30);
+    A += rotl(B, 5) + (C ^ D ^ E) + 0x6ed9eba1 + W[13]; C = rotl(C, 30);
+    E += rotl(A, 5) + (B ^ C ^ D) + 0x6ed9eba1 + W[14]; B = rotl(B, 30);
+    D += rotl(E, 5) + (A ^ B ^ C) + 0x6ed9eba1 + W[15]; A = rotl(A, 30);
+    for i in range(16):
+        t = W[i] ^ W[(i-3+16) & 15] ^ W[(i-8+16) & 15] ^ W[(i-14+16) & 15 ]
+        W[i] = rotl(t, 1)
+    C += rotl(D, 5) + (E ^ A ^ B) + 0x6ed9eba1 + W[0 ]; E = rotl(E, 30);
+    B += rotl(C, 5) + (D ^ E ^ A) + 0x6ed9eba1 + W[1 ]; D = rotl(D, 30);
+    A += rotl(B, 5) + (C ^ D ^ E) + 0x6ed9eba1 + W[2 ]; C = rotl(C, 30);
+    E += rotl(A, 5) + (B ^ C ^ D) + 0x6ed9eba1 + W[3 ]; B = rotl(B, 30);
+    D += rotl(E, 5) + (A ^ B ^ C) + 0x6ed9eba1 + W[4 ]; A = rotl(A, 30);
+    C += rotl(D, 5) + (E ^ A ^ B) + 0x6ed9eba1 + W[5 ]; E = rotl(E, 30);
+    B += rotl(C, 5) + (D ^ E ^ A) + 0x6ed9eba1 + W[6 ]; D = rotl(D, 30);
+    A += rotl(B, 5) + (C ^ D ^ E) + 0x6ed9eba1 + W[7 ]; C = rotl(C, 30);
+    
+    # Round 3
+    E += rotl(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + W[ 8]; B = rotl(B, 30);
+    D += rotl(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + W[ 9]; A = rotl(A, 30);
+    C += rotl(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + W[10]; E = rotl(E, 30);
+    B += rotl(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + W[11]; D = rotl(D, 30);
+    A += rotl(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + W[12]; C = rotl(C, 30);
+    E += rotl(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + W[13]; B = rotl(B, 30);
+    D += rotl(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + W[14]; A = rotl(A, 30);
+    C += rotl(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + W[15]; E = rotl(E, 30);
+    for i in range(16):
+        t = W[i] ^ W[(i-3+16) & 15] ^ W[(i-8+16) & 15] ^ W[(i-14+16) & 15 ]
+        W[i] = rotl(t, 1)
+    B += rotl(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + W[ 0]; D = rotl(D, 30);
+    A += rotl(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + W[ 1]; C = rotl(C, 30);
+    E += rotl(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + W[ 2]; B = rotl(B, 30);
+    D += rotl(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + W[ 3]; A = rotl(A, 30);
+    C += rotl(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + W[ 4]; E = rotl(E, 30);
+    B += rotl(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + W[ 5]; D = rotl(D, 30);
+    A += rotl(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + W[ 6]; C = rotl(C, 30);
+    E += rotl(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + W[ 7]; B = rotl(B, 30);
+    D += rotl(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + W[ 8]; A = rotl(A, 30);
+    C += rotl(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + W[ 9]; E = rotl(E, 30);
+    B += rotl(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + W[10]; D = rotl(D, 30);
+    A += rotl(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + W[11]; C = rotl(C, 30);
+
+    # Round 4
+    E += rotl(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + W[12]; B = rotl(B, 30);
+    D += rotl(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + W[13]; A = rotl(A, 30);
+    C += rotl(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + W[14]; E = rotl(E, 30);
+    B += rotl(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + W[15]; D = rotl(D, 30);
+    for i in range(16):
+        t = W[i] ^ W[(i-3+16) & 15] ^ W[(i-8+16) & 15] ^ W[(i-14+16) & 15 ]
+        W[i] = rotl(t, 1)
+    A += rotl(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + W[ 0]; C = rotl(C, 30);
+    E += rotl(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + W[ 1]; B = rotl(B, 30);
+    D += rotl(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + W[ 2]; A = rotl(A, 30);
+    C += rotl(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + W[ 3]; E = rotl(E, 30);
+    B += rotl(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + W[ 4]; D = rotl(D, 30);
+    A += rotl(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + W[ 5]; C = rotl(C, 30);
+    E += rotl(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + W[ 6]; B = rotl(B, 30);
+    D += rotl(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + W[ 7]; A = rotl(A, 30);
+    C += rotl(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + W[ 8]; E = rotl(E, 30);
+    B += rotl(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + W[ 9]; D = rotl(D, 30);
+    A += rotl(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + W[10]; C = rotl(C, 30);
+    E += rotl(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + W[11]; B = rotl(B, 30);
+    D += rotl(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + W[12]; A = rotl(A, 30);
+    C += rotl(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + W[13]; E = rotl(E, 30);
+    B += rotl(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + W[14]; D = rotl(D, 30);
+    A += rotl(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + W[15]; C = rotl(C, 30);
 
     # Save state
     state[0] += A
@@ -112,7 +129,6 @@ with Function(void)(state, W) as sha1_block:
     state[3] += D
     state[4] += E
 
-const_i = 0
 with Function(void)(state, W) as sha1_block_:
     pass
     # # Load state
@@ -160,7 +176,7 @@ with Function(void)(state, W) as sha1_block_:
     # state[3] += d
     
 # Define targets
-sha1_block.targets  = [Target.PLAIN_C, Target.SSE2, Target.AVX, Target.AVX2]
+sha1_block.targets  = [Target.AVX2]#Target.PLAIN_C, Target.SSE2, Target.AVX, Target.AVX2]
 sha1_block_.targets = [Target.AVX512]
 sha1_block.parallelization_factor [Target.SSE2  ] = [1, 2, 3, 4]
 sha1_block.parallelization_factor [Target.AVX   ] = [1, 2, 3, 4]
