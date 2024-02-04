@@ -1246,7 +1246,68 @@ static void bm_asm_func(benchmark::State& _benchmark_state) {
 }
 BENCHMARK(bm_asm_func);
 ''')
-            
+
+import subprocess
+def build_and_run(cmake_exe: str, run_tests: bool = True, run_benchmark: bool = True, sde_exe: str = None, 
+                  sde_test_cpus: list[str] = ['-p4p', '-snb', '-hsw', '-knm']):# Pentium4 Prescott [SSE2], Sandy Bridge [AVX], Haswell [AVX2], Knights Mill [AVX512]
+    
+    script_dir = path.dirname(get_function_definition_filename())
+    subprocess.run([cmake_exe, '-S', 'tests', '-B', f'{script_dir}/out/build'])
+    subprocess.run([cmake_exe, '--build', f'{script_dir}/out/build', '--config', 'Release'])
+    
+    if run_tests:
+        if sde_exe:
+            option_to_cpu_name: dict[str, str] = {
+                '-quark ': 'Intel(R) Quark CPU',
+                '-p4'    : 'Intel(R) Pentium4 CPU',
+                '-p4p'   : 'Intel(R) Pentium4 Prescott CPU',
+                '-mrm'   : 'Intel(R) Merom CPU',
+                '-pnr'   : 'Intel(R) Penryn CPU',
+                '-nhm'   : 'Intel(R) Nehalem CPU',
+                '-wsm'   : 'Intel(R) Westmere CPU',
+                '-snb'   : 'Intel(R) Sandy Bridge CPU',
+                '-ivb'   : 'Intel(R) Ivy Bridge CPU',
+                '-hsw'   : 'Intel(R) Haswell CPU',
+                '-bdw'   : 'Intel(R) Broadwell CPU',
+                '-slt'   : 'Intel(R) Saltwell CPU',
+                '-slm'   : 'Intel(R) Silvermont CPU',
+                '-glm'   : 'Intel(R) Goldmont CPU',
+                '-glp'   : 'Intel(R) Goldmont Plus CPU',
+                '-tnt'   : 'Intel(R) Tremont CPU',
+                '-snr'   : 'Intel(R) Snow Ridge CPU',
+                '-skl'   : 'Intel(R) Skylake CPU',
+                '-cnl'   : 'Intel(R) Cannon Lake CPU',
+                '-icl'   : 'Intel(R) Ice Lake CPU',
+                '-skx'   : 'Intel(R) Skylake server CPU',
+                '-clx'   : 'Intel(R) Cascade Lake CPU',
+                '-cpx'   : 'Intel(R) Cooper Lake CPU',
+                '-icx'   : 'Intel(R) Ice Lake server CPU',
+                '-knl'   : 'Intel(R) Knights landing CPU',
+                '-knm'   : 'Intel(R) Knights mill CPU',
+                '-tgl'   : 'Intel(R) Tiger Lake CPU',
+                '-adl'   : 'Intel(R) Alder Lake CPU',
+                '-mtl'   : 'Intel(R) Meteor Lake CPU',
+                '-rpl'   : 'Intel(R) Raptor Lake CPU',
+                '-spr'   : 'Intel(R) Sapphire Rapids CPU',
+                '-emr'   : 'Intel(R) Emerald Rapids CPU',
+                '-gnr'   : 'Intel(R) Granite Rapids CPU',
+                '-gnr256': 'Intel(R) Granite Rapids (AVX10.1 / 256VL) CPU',
+                '-srf'   : 'Intel(R) Sierra Forest CPU',
+                '-arl'   : 'Intel(R) Arrow Lake CPU',
+                '-lnl'   : 'Intel(R) Lunar Lake CPU',
+                '-future': 'Intel(R) Future chip CPU',
+            }
+            for cpu_option in sde_test_cpus:
+                if cpu_option in option_to_cpu_name:
+                    print(f'\n{colored(option_to_cpu_name[cpu_option], 'yellow')}')
+                else:
+                    print(f'\n{colored('Unknown CPU option', 'red')}')
+                subprocess.run([sde_exe, cpu_option, '--', f'{script_dir}/out/build/Release/runUnitTests.exe'])
+        else:
+            subprocess.run([f'{script_dir}/out/build/Release/runUnitTests.exe'])
+
+    if run_benchmark:
+        subprocess.run([f'{script_dir}/out/build/Release/runBenchmark.exe'])
         
 #register_at_exit(generate_code)
    

@@ -164,10 +164,11 @@ with Function(void)(state, W) as sha1_block_:
     # state[3] += d
     
 # Define targets
-sha1_block.targets  = [Target.AVX2]#Target.PLAIN_C, Target.SSE2, Target.AVX, Target.AVX2]
+sha1_block.targets  = [Target.PLAIN_C, Target.SSE2, Target.AVX, Target.AVX2]
 sha1_block_.targets = [Target.AVX512]
 sha1_block.parallelization_factor [Target.SSE2  ] = [1, 2]
 sha1_block.parallelization_factor [Target.AVX   ] = [1, 2]
 sha1_block.parallelization_factor [Target.AVX2  ] = [1, 2]
 sha1_block_.parallelization_factor[Target.AVX512] = [1, 2]
 generate_code()
+build_and_run('C:/Program Files/CMake/bin/cmake.exe', run_benchmark=False, sde_exe='C:/Users/Alain/Downloads/sde-external-9.33.0-2024-01-07-win/sde.exe')
