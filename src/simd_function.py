@@ -1251,8 +1251,11 @@ import subprocess
 def build_and_run(cmake_exe: str, run_tests: bool = True, run_benchmark: bool = True, sde_exe: str = None, 
                   sde_test_cpus: list[str] = ['-p4p', '-snb', '-hsw', '-knm']):# Pentium4 Prescott [SSE2], Sandy Bridge [AVX], Haswell [AVX2], Knights Mill [AVX512]
     
+    if not cmake_exe:
+        cmake_exe = 'cmake'
+    
     script_dir = path.dirname(get_function_definition_filename())
-    subprocess.run([cmake_exe, '-S', 'tests', '-B', f'{script_dir}/out/build'])
+    subprocess.run([cmake_exe, '-S', f'{script_dir}', '-B', f'{script_dir}/out/build'])
     subprocess.run([cmake_exe, '--build', f'{script_dir}/out/build', '--config', 'Release'])
     
     if run_tests:
@@ -1302,12 +1305,12 @@ def build_and_run(cmake_exe: str, run_tests: bool = True, run_benchmark: bool = 
                     print(f'\n{colored(option_to_cpu_name[cpu_option], 'yellow')}')
                 else:
                     print(f'\n{colored('Unknown CPU option', 'red')}')
-                subprocess.run([sde_exe, cpu_option, '--', f'{script_dir}/out/build/Release/runUnitTests.exe'])
+                subprocess.run([sde_exe, cpu_option, '--', f'{script_dir}/out/build/Release/runUnitTests'])
         else:
-            subprocess.run([f'{script_dir}/out/build/Release/runUnitTests.exe'])
+            subprocess.run([f'{script_dir}/out/build/Release/runUnitTests'])
 
     if run_benchmark:
-        subprocess.run([f'{script_dir}/out/build/Release/runBenchmark.exe'])
+        subprocess.run([f'{script_dir}/out/build/Release/runBenchmark'])
         
 #register_at_exit(generate_code)
    
