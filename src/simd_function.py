@@ -180,7 +180,7 @@ class LoadInstruction(Instruction):
         
 class StoreInstruction(Instruction):
     memory: 'MemoryArray'
-    index: 'in | Variable' # Should support any index (constant, scalar, ...)
+    index: 'int | Variable' # Should support any index (constant, scalar, ...)
     operand: 'int | float | Variable'
     
     def __init__(self, operand, memory, index) -> None:
@@ -1298,7 +1298,7 @@ class Variable:
         elif isinstance(self, Scalar): result = Scalar(self.c_type, is_uninitialize=False)
         else: raise TypeError
         
-        defined_functions[-1].add_instruction(Instruction(result, self), ctype)
+        defined_functions[-1].add_instruction(instruction(result, self), scalar_type)
         return result
     # Operators
     def __neg__(self): # -
