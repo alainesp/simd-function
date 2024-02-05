@@ -21,7 +21,6 @@ md5_consts = [
     0xf4292244, 0x432aff97, 0xab9423a7, 0xfc93a039, 0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1,
     0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1, 0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391
 ]
-const_i = 0
     
 ## <summary>
 ## MD5 compress block
@@ -37,35 +36,31 @@ with Function(void)(state, block) as md5_block:
 
     # Round 1
     for i in range(0, 16, 4):
-        a += block[i + 0]; t = c ^ d; t &= b; a += md5_consts[const_i + 0]; t ^= d; a += t;    t = a <<  7; a >>= (32 -  7); a |= t; a += b
-        d += block[i + 1]; t = b ^ c; t &= a; d += md5_consts[const_i + 1]; t ^= c; d += t;    t = d << 12; d >>= (32 - 12); d |= t; d += a
-        c += block[i + 2]; t = a ^ b; t &= d; c += md5_consts[const_i + 2]; t ^= b; c += t;    t = c << 17; c >>= (32 - 17); c |= t; c += d
-        b += block[i + 3]; t = d ^ a; t &= c; b += md5_consts[const_i + 3]; t ^= a; b += t;    t = b << 22; b >>= (32 - 22); b |= t; b += c
-        const_i += 4
+        a += block[i + 0]; t = c ^ d; t &= b; a += md5_consts[i + 0]; t ^= d; a += t;    t = a <<  7; a >>= (32 -  7); a |= t; a += b
+        d += block[i + 1]; t = b ^ c; t &= a; d += md5_consts[i + 1]; t ^= c; d += t;    t = d << 12; d >>= (32 - 12); d |= t; d += a
+        c += block[i + 2]; t = a ^ b; t &= d; c += md5_consts[i + 2]; t ^= b; c += t;    t = c << 17; c >>= (32 - 17); c |= t; c += d
+        b += block[i + 3]; t = d ^ a; t &= c; b += md5_consts[i + 3]; t ^= a; b += t;    t = b << 22; b >>= (32 - 22); b |= t; b += c
 
 	# Round 2
-    for i in range(0, 16, 4):
-        a += block[(i +  1) & 15]; t = b ^ c; t &= d; a += md5_consts[const_i + 0]; t ^= c; a += t;    t = a <<  5; a >>= (32 -  5); a |= t; a += b
-        d += block[(i +  6) & 15]; t = a ^ b; t &= c; d += md5_consts[const_i + 1]; t ^= b; d += t;    t = d <<  9; d >>= (32 -  9); d |= t; d += a
-        c += block[(i + 11) & 15]; t = d ^ a; t &= b; c += md5_consts[const_i + 2]; t ^= a; c += t;    t = c << 14; c >>= (32 - 14); c |= t; c += d
-        b += block[(i +  0) & 15]; t = c ^ d; t &= a; b += md5_consts[const_i + 3]; t ^= d; b += t;    t = b << 20; b >>= (32 - 20); b |= t; b += c
-        const_i += 4
+    for i in range(16, 32, 4):
+        a += block[(i +  1) & 15]; t = b ^ c; t &= d; a += md5_consts[i + 0]; t ^= c; a += t;    t = a <<  5; a >>= (32 -  5); a |= t; a += b
+        d += block[(i +  6) & 15]; t = a ^ b; t &= c; d += md5_consts[i + 1]; t ^= b; d += t;    t = d <<  9; d >>= (32 -  9); d |= t; d += a
+        c += block[(i + 11) & 15]; t = d ^ a; t &= b; c += md5_consts[i + 2]; t ^= a; c += t;    t = c << 14; c >>= (32 - 14); c |= t; c += d
+        b += block[(i +  0) & 15]; t = c ^ d; t &= a; b += md5_consts[i + 3]; t ^= d; b += t;    t = b << 20; b >>= (32 - 20); b |= t; b += c
 
 	# Round 3
-    for i in [0, -4, -8, -12]:
+    for i, const_i in zip([0, -4, -8, -12], range(32, 48, 4)):
         a += block[(i + 5  + 16) & 15]; t = c ^ d; a += md5_consts[const_i + 0]; t ^= b; a += t;    t = a <<  4; a >>= (32 -  4); a |= t; a += b
         d += block[(i + 8  + 16) & 15]; t = b ^ c; d += md5_consts[const_i + 1]; t ^= a; d += t;    t = d << 11; d >>= (32 - 11); d |= t; d += a
         c += block[(i + 11 + 16) & 15]; t = a ^ b; c += md5_consts[const_i + 2]; t ^= d; c += t;    t = c << 16; c >>= (32 - 16); c |= t; c += d
         b += block[(i + 14 + 16) & 15]; t = d ^ a; b += md5_consts[const_i + 3]; t ^= c; b += t;    t = b << 23; b >>= (32 - 23); b |= t; b += c
-        const_i += 4
 
 	# Round 4
-    for i in [0, 12, 24, 36]:
+    for i, const_i in zip([0, 12, 24, 36], range(48, 64, 4)):
         a += block[(i +  0) & 15]; t = ~d; a += md5_consts[const_i + 0]; t |= b; t ^= c; a += t;    t = a <<  6; a >>= (32 -  6); a |= t; a += b
         d += block[(i +  7) & 15]; t = ~c; d += md5_consts[const_i + 1]; t |= a; t ^= b; d += t;    t = d << 10; d >>= (32 - 10); d |= t; d += a
         c += block[(i + 14) & 15]; t = ~b; c += md5_consts[const_i + 2]; t |= d; t ^= a; c += t;    t = c << 15; c >>= (32 - 15); c |= t; c += d
         b += block[(i +  5) & 15]; t = ~a; b += md5_consts[const_i + 3]; t |= c; t ^= d; b += t;    t = b << 21; b >>= (32 - 21); b |= t; b += c
-        const_i += 4
         
     # Save state
     state[0] += a
@@ -73,7 +68,11 @@ with Function(void)(state, block) as md5_block:
     state[2] += c
     state[1] += b
 
-const_i = 0
+## <summary>
+## MD5 compress block
+## </summary>
+## <param name="state">The md5 state</param>
+## <param name="block">The message to compress</param>
 with Function(void)(state, block) as md5_block_:
     # Load state
     a = state[0]
@@ -83,35 +82,31 @@ with Function(void)(state, block) as md5_block_:
 
     # Round 1
     for i in range(0, 16, 4):
-        a += block[i + 0]; t = ternary_logic(d, c, b, 0xd8); a += md5_consts[const_i + 0]; a += t; a = rotl(a,  7); a += b
-        d += block[i + 1]; t = ternary_logic(c, b, a, 0xd8); d += md5_consts[const_i + 1]; d += t; d = rotl(d, 12); d += a
-        c += block[i + 2]; t = ternary_logic(b, a, d, 0xd8); c += md5_consts[const_i + 2]; c += t; c = rotl(c, 17); c += d
-        b += block[i + 3]; t = ternary_logic(a, d, c, 0xd8); b += md5_consts[const_i + 3]; b += t; b = rotl(b, 22); b += c
-        const_i += 4
+        a += block[i + 0]; t = ternary_logic(d, c, b, 0xd8); a += md5_consts[i + 0]; a += t; a = rotl(a,  7); a += b
+        d += block[i + 1]; t = ternary_logic(c, b, a, 0xd8); d += md5_consts[i + 1]; d += t; d = rotl(d, 12); d += a
+        c += block[i + 2]; t = ternary_logic(b, a, d, 0xd8); c += md5_consts[i + 2]; c += t; c = rotl(c, 17); c += d
+        b += block[i + 3]; t = ternary_logic(a, d, c, 0xd8); b += md5_consts[i + 3]; b += t; b = rotl(b, 22); b += c
 
 	# Round 2
-    for i in range(0, 16, 4):
-        a += block[(i +  1) & 15]; t = ternary_logic(c, b, d, 0xd8); a += md5_consts[const_i + 0]; a += t; a = rotl(a,  5); a += b
-        d += block[(i +  6) & 15]; t = ternary_logic(b, a, c, 0xd8); d += md5_consts[const_i + 1]; d += t; d = rotl(d,  9); d += a
-        c += block[(i + 11) & 15]; t = ternary_logic(a, d, b, 0xd8); c += md5_consts[const_i + 2]; c += t; c = rotl(c, 14); c += d
-        b += block[(i +  0) & 15]; t = ternary_logic(d, c, a, 0xd8); b += md5_consts[const_i + 3]; b += t; b = rotl(b, 20); b += c
-        const_i += 4
+    for i in range(16, 32, 4):
+        a += block[(i +  1) & 15]; t = ternary_logic(c, b, d, 0xd8); a += md5_consts[i + 0]; a += t; a = rotl(a,  5); a += b
+        d += block[(i +  6) & 15]; t = ternary_logic(b, a, c, 0xd8); d += md5_consts[i + 1]; d += t; d = rotl(d,  9); d += a
+        c += block[(i + 11) & 15]; t = ternary_logic(a, d, b, 0xd8); c += md5_consts[i + 2]; c += t; c = rotl(c, 14); c += d
+        b += block[(i +  0) & 15]; t = ternary_logic(d, c, a, 0xd8); b += md5_consts[i + 3]; b += t; b = rotl(b, 20); b += c
 
 	# Round 3
-    for i in [0, -4, -8, -12]:
+    for i, const_i in zip([0, -4, -8, -12], range(32, 48, 4)):
         a += block[(i +  5 + 16) & 15]; t = ternary_logic(d, c, b, 0x96); a += md5_consts[const_i + 0]; a += t; a = rotl(a,  4); a += b
         d += block[(i +  8 + 16) & 15]; t = ternary_logic(c, b, a, 0x96); d += md5_consts[const_i + 1]; d += t; d = rotl(d, 11); d += a
         c += block[(i + 11 + 16) & 15]; t = ternary_logic(b, a, d, 0x96); c += md5_consts[const_i + 2]; c += t; c = rotl(c, 16); c += d
         b += block[(i + 14 + 16) & 15]; t = ternary_logic(a, d, c, 0x96); b += md5_consts[const_i + 3]; b += t; b = rotl(b, 23); b += c
-        const_i += 4
 
 	# Round 4
-    for i in [0, 12, 24, 36]:
+    for i, const_i in zip([0, 12, 24, 36], range(48, 64, 4)):
         a += block[(i +  0) & 15]; t = ternary_logic(b, c, d, 0x39); a += md5_consts[const_i + 0]; a += t; a = rotl(a,  6); a += b
         d += block[(i +  7) & 15]; t = ternary_logic(a, b, c, 0x39); d += md5_consts[const_i + 1]; d += t; d = rotl(d, 10); d += a
         c += block[(i + 14) & 15]; t = ternary_logic(d, a, b, 0x39); c += md5_consts[const_i + 2]; c += t; c = rotl(c, 15); c += d
         b += block[(i +  5) & 15]; t = ternary_logic(c, d, a, 0x39); b += md5_consts[const_i + 3]; b += t; b = rotl(b, 21); b += c
-        const_i += 4
         
     # Save state
     state[0] += a
