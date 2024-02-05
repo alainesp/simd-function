@@ -1095,7 +1095,7 @@ static void bm_asm_func(benchmark::State& _benchmark_state) {
 		asm_func(state, block);
 		num_calls++;
 	}
-	_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * 24, benchmark::Counter::kIsRate);
+	_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * 8, benchmark::Counter::kIsRate);
 }
 BENCHMARK(bm_asm_func);
 ''')
