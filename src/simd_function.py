@@ -358,11 +358,21 @@ class TernaryLoginInstruction(BinaryInstruction):
     
     def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
         if self.is_nope: return ''
-        if target != Target.AVX512: raise TypeError
-        
         operand1_expression, operand2_expression = self.get_expresions(target, instruction_by_tmp)
         operand3_expression = get_expresion(self.operand3, target, instruction_by_tmp)
-        call_result = f'ternary_logic<{hex(self.imm8)}>({operand1_expression}, {operand2_expression}, {operand3_expression})'
+        
+        match target:
+            case Target.AVX512: 
+                call_result = f'ternary_logic<{hex(self.imm8)}>({operand1_expression}, {operand2_expression}, {operand3_expression})'
+            case _:
+                match self.imm8:
+                    case 0xd8: call_result = f'({operand1_expression} ^ ({operand3_expression} & ({operand2_expression} ^ {operand1_expression})))'
+                    
+                    case 0xE8: call_result = f'(({operand3_expression} & {operand2_expression}) ^ ({operand1_expression} & ({operand3_expression} ^ {operand2_expression})))'
+                    
+                    case 0x96: call_result = f'({operand1_expression} ^ {operand2_expression} ^ {operand3_expression})'
+                    case _: raise TypeError
+            
         if self.result.is_tmp(): return call_result
         else: return f'{self.result.name} = {call_result};'
 
