@@ -6,7 +6,6 @@
 
 from dataclasses import dataclass
 from inspect import stack
-# from atexit import register as register_at_exit
 from enum import IntEnum
 import operator
 from os import path
@@ -90,16 +89,14 @@ class Target(IntEnum):
     AVX         = 3
     AVX2        = 4
     AVX512      = 5
-    
-    MASM64_AVX  = 6
-    MASM64_AVX2 = 7
+    NEON        = 6
 
 default_targets: list[Target] = [Target.PLAIN_C]
 def target_simd_size(target: Target) -> int:
     match target:
         case Target.PLAIN_C: return 1
-        case Target.SSE2 | Target.AVX | Target.MASM64_AVX: return 4 # TODO: Consider AVX for floats
-        case Target.AVX2 | Target.MASM64_AVX2: return 8
+        case Target.SSE2 | Target.AVX | Target.NEON: return 4 # TODO: Consider AVX for floats
+        case Target.AVX2  : return  8
         case Target.AVX512: return 16
         case _: raise NotImplementedError
 
@@ -123,14 +120,23 @@ class Instruction:
 
 def get_expresion(tmp: 'int | float | Variable', target: Target, instruction_by_tmp: dict['Variable', Instruction]) -> str:
     if isinstance(tmp, int) or isinstance(tmp, float):
-        if tmp >= 64: return f'{hex(tmp)}'
-        else:         return f'{tmp:2}'
-    if target == Target.PLAIN_C and isinstance(tmp, Variable) and tmp.is_constant:
-        return f'{hex(tmp.constant_value)}'
+        return f'{tmp:2}'
     if not tmp.is_tmp():
         return tmp.name
     if tmp.is_constant:
-        return f'{hex(tmp.constant_value)}'
+        prefix = ''
+        suffix = ')'
+        if tmp.c_type ==  uint8_t: prefix = 'UINT8_C('
+        if tmp.c_type ==   int8_t: prefix = 'INT8_C('
+        if tmp.c_type == uint16_t: prefix = 'UINT16_C('
+        if tmp.c_type ==  int16_t: prefix = 'INT16_C('
+        if tmp.c_type == uint32_t: prefix = 'UINT32_C('
+        if tmp.c_type ==  int32_t: prefix = 'INT32_C('
+        if tmp.c_type == uint64_t: prefix = 'UINT64_C('
+        if tmp.c_type ==  int64_t: prefix = 'INT64_C('
+        if tmp.c_type ==   float: suffix = 'f'
+        
+        return f'{prefix}{hex(tmp.constant_value)}{suffix}'
     
     return instruction_by_tmp[tmp].generate_code(target, instruction_by_tmp)
 
@@ -139,7 +145,7 @@ def is_float_type(c_type: ctype) -> bool:
 
 class LoadInstruction(Instruction):
     memory: 'MemoryArray'
-    index: any # Should support any index (constant, scalar, ...)
+    index: 'int | float | Variable' # Should support any index (constant, scalar, ...)
     
     def __init__(self, result, memory, index) -> None:
         super().__init__(result, get_line_number())
@@ -158,31 +164,24 @@ class LoadInstruction(Instruction):
                 return f'{self.result.name} = {memory_expression};'
             
         # Load data instruction
-        if target == Target.MASM64_AVX or target == Target.MASM64_AVX2:
-            memory_expression = f'[{memory_name} + {self.index}*REG_BYTE_SIZE]'
-            if self.result.is_tmp():
-                return memory_expression
-            else:
-                return f'vmovdq{'a' if self.memory.alignment >= 16 else 'u'} {self.result.name}, {get_reg_simd_name(target)}word ptr {memory_expression}\n'
+        aligment_str = ''
+        if (target == Target.SSE2 and self.memory.alignment < 16) or \
+            (target == Target.AVX and is_float_type(self.memory.c_type) and self.memory.alignment < 32) or \
+            (target == Target.AVX and not is_float_type(self.memory.c_type) and self.memory.alignment < 16) or \
+            (target == Target.AVX2 and self.memory.alignment < 32) or \
+            (target == Target.AVX512 and self.memory.alignment < 64):
+            aligment_str = 'u'
+        # Expresion
+        memory_expression = f'load{aligment_str}({memory_name} + {self.index:2})'
+        if self.result.is_tmp():
+            return memory_expression
         else:
-            aligment_str = ''
-            if (target == Target.SSE2 and self.memory.alignment < 16) or \
-               (target == Target.AVX and is_float_type(self.memory.c_type) and self.memory.alignment < 32) or \
-               (target == Target.AVX and not is_float_type(self.memory.c_type) and self.memory.alignment < 16) or \
-               (target == Target.AVX2 and self.memory.alignment < 32) or \
-               (target == Target.AVX512 and self.memory.alignment < 64):
-                aligment_str = 'u'
-            # Expresion
-            memory_expression = f'load{aligment_str}({memory_name} + {self.index:2})'
-            if self.result.is_tmp():
-                return memory_expression
-            else:
-                return f'{self.result.name} = {memory_expression};'
+            return f'{self.result.name} = {memory_expression};'
         
 class StoreInstruction(Instruction):
     memory: 'MemoryArray'
-    index: any # Should support any index (constant, scalar, ...)
-    operand: 'Scalar | Vector | int | float'
+    index: 'in | Variable' # Should support any index (constant, scalar, ...)
+    operand: 'int | float | Variable'
     
     def __init__(self, operand, memory, index) -> None:
         super().__init__(None, get_line_number())
@@ -194,10 +193,8 @@ class StoreInstruction(Instruction):
         if isinstance(self.operand, int) or isinstance(self.operand, float):
             constants.add(self.operand)
             self.operand = Vector(self.memory.c_type, True, self.operand, is_uninitialize=False)
-            self.operand.name = f'const_{hex(self.operand.constant_value)}'
         elif self.operand.is_constant:
             constants.add(self.operand.constant_value)
-            self.operand.name = f'const_{hex(self.operand.constant_value)}'
             
     def use_value(self, value) -> bool:
         return self.operand == value
@@ -210,23 +207,19 @@ class StoreInstruction(Instruction):
             memory_expression = f'{memory_name}[{self.index}]'
             return f'{memory_expression} = {get_expresion(self.operand, target, instruction_by_tmp)};'
         
-        if target == Target.MASM64_AVX or target == Target.MASM64_AVX2:
-            memory_expression = f'[{memory_name} + {self.index}*REG_BYTE_SIZE]'
-            return f'vmovdq{'a' if self.memory.alignment >= 16 else 'u'} {get_reg_simd_name(target)}word ptr {memory_expression}, {self.operand.name}\n'
-        else:
-            # Load data instruction
-            aligment_str = ''
-            if (target == Target.SSE2 and self.memory.alignment < 16) or \
-               (target == Target.AVX and self.memory.alignment < 32 and (self.memory.c_type == float or self.memory.c_type == double)) or \
-               (target == Target.AVX and self.memory.alignment < 16 and (self.memory.c_type != float and self.memory.c_type != double)) or \
-               (target == Target.AVX2 and self.memory.alignment < 32) or \
-               (target == Target.AVX512 and self.memory.alignment < 64):
-                aligment_str = 'u'
-            # Expresion
-            return f'store{aligment_str}({memory_name} + {self.index:2}, {get_expresion(self.operand, target, instruction_by_tmp)});'
+        # Load data instruction
+        aligment_str = ''
+        if (target == Target.SSE2 and self.memory.alignment < 16) or \
+            (target == Target.AVX and self.memory.alignment < 32 and (self.memory.c_type == float or self.memory.c_type == double)) or \
+            (target == Target.AVX and self.memory.alignment < 16 and (self.memory.c_type != float and self.memory.c_type != double)) or \
+            (target == Target.AVX2 and self.memory.alignment < 32) or \
+            (target == Target.AVX512 and self.memory.alignment < 64):
+            aligment_str = 'u'
+        # Expresion
+        return f'store{aligment_str}({memory_name} + {self.index:2}, {get_expresion(self.operand, target, instruction_by_tmp)});'
  
 class UnaryInstruction(Instruction):
-    operand: 'Scalar | Vector | int | float'
+    operand: 'Variable'
     c_operator: str
     
     def __init__(self, result, operand, c_operator: str) -> None:
@@ -235,27 +228,19 @@ class UnaryInstruction(Instruction):
         self.c_operator = c_operator
         
     def register_constant(self, constants: set[int | float]):
-        if isinstance(self.operand, int) or isinstance(self.operand, float):
-            constants.add(self.operand)
-            self.operand = Vector(self.memory.c_type, True, self.operand, is_uninitialize=False)
-            self.operand.name = f'const_{hex(self.operand.constant_value)}'
-        elif self.operand.is_constant:
-            constants.add(self.operand.constant_value)
-            self.operand.name = f'const_{hex(self.operand.constant_value)}'
+        if isinstance(self.operand, int) or isinstance(self.operand, float) or self.operand.is_constant:
+            raise TypeError
             
     def use_value(self, value) -> bool:
         return self.operand == value
         
     def generate_code(self, target: Target, instruction_by_tmp: dict[any, Instruction]):
         operand_expression = f'{self.c_operator}({get_expresion(self.operand, target, instruction_by_tmp)})'
-        match target:
-            case Target.MASM64_AVX | Target.MASM64_AVX2:
-                raise NotImplementedError
-            case _: 
-                if self.result.is_tmp():
-                    return operand_expression
-                else:
-                    return f'{self.result.name} = {operand_expression};'
+        
+        if self.result.is_tmp():
+            return operand_expression
+        else:
+            return f'{self.result.name} = {operand_expression};'
             
 class ReturnInstruction(UnaryInstruction):
     def __init__(self, operand) -> None:
@@ -264,10 +249,9 @@ class ReturnInstruction(UnaryInstruction):
         return f'return {get_expresion(self.operand, target, instruction_by_tmp)};'
     
 class BinaryInstruction(Instruction):
-    operand1: any
-    operand2: any
+    operand1: 'int | float | Variable'
+    operand2: 'int | float | Variable'
     c_operator: str
-    need_vector_operands: bool = False
     
     def __init__(self, result, operand1, operand2, c_operator: str = '') -> None:
         super().__init__(result, get_line_number())
@@ -279,10 +263,8 @@ class BinaryInstruction(Instruction):
         if isinstance(self.operand1, int) or isinstance(self.operand1, float):
             constants.add(self.operand1)
             self.operand1 = Vector(self.operand1.c_type, True, self.operand1, is_uninitialize=False)
-            self.operand1.name = f'const_{hex(self.operand1.constant_value)}'
         elif isinstance(self.operand1, Variable) and self.operand1.is_constant:
             constants.add(self.operand1.constant_value)
-            self.operand1.name = f'const_{hex(self.operand1.constant_value)}'
             
         if isinstance(self.operand1, MemoryArray):
             return
@@ -290,10 +272,8 @@ class BinaryInstruction(Instruction):
         if isinstance(self.operand2, int) or isinstance(self.operand2, float):
             constants.add(self.operand2)
             self.operand2 = Vector(self.operand1.c_type, True, self.operand2, is_uninitialize=False)
-            self.operand2.name = f'const_{hex(self.operand2.constant_value)}'
         elif self.operand2.is_constant:
             constants.add(self.operand2.constant_value)
-            self.operand2.name = f'const_{hex(self.operand2.constant_value)}'
             
     def use_value(self, value) -> bool:
         return self.operand1 == value or self.operand2 == value
@@ -305,66 +285,35 @@ class BinaryInstruction(Instruction):
         if self.is_nope: return ''
         operand1_expression, operand2_expression = self.get_expresions(target, instruction_by_tmp)
         
-        if target == Target.MASM64_AVX or target == Target.MASM64_AVX2:
-            # Check memory access
-            if self.operand1.is_tmp() and isinstance(instruction_by_tmp[self.operand1], LoadInstruction) and \
-               self.operand2.is_tmp() and isinstance(instruction_by_tmp[self.operand2], LoadInstruction):
-                raise TypeError
-            # Move memory access to last operand
-            if self.operand1.is_tmp() and isinstance(instruction_by_tmp[self.operand1], LoadInstruction):
-                operand1_expression, operand2_expression = operand2_expression, operand1_expression
-            elif self.result.name and self.result.name == operand2_expression:
-                operand1_expression, operand2_expression = operand2_expression, operand1_expression
-            
-            return f'{self.get_call(target)}    {self.result.name}, {operand1_expression}, {operand2_expression}\n'
-        else:
-            if self.c_operator:
-            # if self.c_operator and (target == Target.PLAIN_C or (isinstance(self.operand1, Scalar) and (isinstance(self.operand2, Scalar) or isinstance(self.operand2, int))) \
-            #     or isinstance(self.operand1, MemoryArray)):
-                if self.result.is_tmp():
-                    return f'({operand1_expression} {self.c_operator} {operand2_expression})'
-                else:
-                    if self.result.name == operand1_expression:
-                        return f'{self.result.name} {self.c_operator}= {operand2_expression};'
-                    elif self.result.name == operand2_expression:
-                        return f'{self.result.name} {self.c_operator}= {operand1_expression};'
-                    else:
-                        return f'{self.result.name} = {operand1_expression} {self.c_operator} {operand2_expression};'
-                    
-            # Vectorization
-            # if self.need_vector_operands and not isinstance(self.operand2, Vector):
-            #     operand2_expression = f'_mm{'' if target == Target.SSE2 else '256'}_set1_{get_vector_ins_sizeof('', self.operand1.c_type)}({operand2_expression})'
-            # if self.need_vector_operands and isinstance(self.operand2, Vector) and self.operand2.is_constant:
-            #     operand2_expression = f'_mm{'' if target == Target.SSE2 else '256'}_set1_{get_vector_ins_sizeof('', self.operand1.c_type)}({hex(self.operand2.constant_value)})'
-                
-            call_result = f'{self.get_call(target)}({operand1_expression}, {operand2_expression})'
+        if self.c_operator:
             if self.result.is_tmp():
-                return call_result
+                return f'({operand1_expression} {self.c_operator} {operand2_expression})'
             else:
-                return f'{self.result.name} = {call_result};'
+                if self.result.name == operand1_expression:
+                    return f'{self.result.name} {self.c_operator}= {operand2_expression};'
+                elif self.result.name == operand2_expression:
+                    return f'{self.result.name} {self.c_operator}= {operand1_expression};'
+                else:
+                    return f'{self.result.name} = {operand1_expression} {self.c_operator} {operand2_expression};'
+                    
+        call_result = f'{self.get_call(target)}({operand1_expression}, {operand2_expression})'
+        if self.result.is_tmp():
+            return call_result
+        else:
+            return f'{self.result.name} = {call_result};'
             
 # Aritmetic      
 class AddInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
         super().__init__(result, operand1, operand2, '+')
-        self.need_vector_operands = True
-    def get_call(self, target: Target) -> str:
-        match target:
-            case Target.MASM64_AVX | Target.MASM64_AVX2: return f'vpaddd' # TODO: handle floats, and other ints
-            case _: raise NotImplementedError
         
 class SubInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
         super().__init__(result, operand1, operand2, '-')
-        self.need_vector_operands = True
-    def get_call(self, target: Target) -> str:
-        raise NotImplementedError
         
 class ProductInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
         super().__init__(result, operand1, operand2, '*')
-    def get_call(self, target: Target) -> str:
-        raise NotImplementedError
 class DivisionInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
         super().__init__(result, operand1, operand2, '/')
@@ -377,24 +326,18 @@ class ModuloInstruction(BinaryInstruction):
         
 # Logical
 class LogicalInstruction(BinaryInstruction):
-    op_name: str
-    def __init__(self, result, operand1, operand2, c_operator: str, op_name: str) -> None:
+    def __init__(self, result, operand1, operand2, c_operator: str) -> None:
         super().__init__(result, operand1, operand2, c_operator)
-        self.need_vector_operands = True
-        self.op_name = op_name
-    def get_call(self, target: Target):
-        match target:
-            case Target.MASM64_AVX | Target.MASM64_AVX2: return f'vp{self.op_name}' # TODO: handle floats
-            case _: raise NotImplementedError
+
 class AndInstruction(LogicalInstruction):
     def __init__(self, result, operand1, operand2) -> None:
-        super().__init__(result, operand1, operand2, '&', 'and')
+        super().__init__(result, operand1, operand2, '&')
 class OrInstruction(LogicalInstruction):
     def __init__(self, result, operand1, operand2) -> None:
-        super().__init__(result, operand1, operand2, '|', 'or')
+        super().__init__(result, operand1, operand2, '|')
 class XorInstruction(LogicalInstruction):
     def __init__(self, result, operand1, operand2) -> None:
-        super().__init__(result, operand1, operand2, '^', 'xor')
+        super().__init__(result, operand1, operand2, '^')
 class TernaryLoginInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2, operand3, imm8) -> None:
         super().__init__(result, operand1, operand2)
@@ -407,10 +350,8 @@ class TernaryLoginInstruction(BinaryInstruction):
         if isinstance(self.operand3, int) or isinstance(self.operand3, float):
             constants.add(self.operand3)
             self.operand3 = Vector(self.operand3.c_type, True, self.operand3, is_uninitialize=False)
-            self.operand3.name = f'const_{hex(self.operand3.constant_value)}'
         elif isinstance(self.operand3, Variable) and self.operand3.is_constant:
             constants.add(self.operand3.constant_value)
-            self.operand3.name = f'const_{hex(self.operand3.constant_value)}'
                   
     def use_value(self, value) -> bool:
         return super().use_value(value) or self.operand3 == value
@@ -436,14 +377,6 @@ class ShiftLInstruction(BinaryInstruction):
 
     def register_constant(self, constants: set[int | float]):
         pass
-        
-    def get_call(self, target: Target) -> str:
-        if isinstance(self.operand2, int) or isinstance(self.operand2, Scalar):
-            match target:
-                case Target.MASM64_AVX | Target.MASM64_AVX2: return f'vpslld' # TODO: handle floats
-                case _: raise NotImplementedError
-        
-        raise TypeError
 class ShiftRInstruction(BinaryInstruction):
     def __init__(self, result, operand1, operand2) -> None:
         super().__init__(result, operand1, operand2, '>>')
@@ -451,13 +384,6 @@ class ShiftRInstruction(BinaryInstruction):
     def register_constant(self, constants: set[int | float]):
         pass
        
-    def get_call(self, target: Target) -> str:
-        if isinstance(self.operand2, int) or isinstance(self.operand2, Scalar):
-            match target:
-                case Target.MASM64_AVX | Target.MASM64_AVX2: return f'vpsrld' # TODO: handle floats
-                case _: raise NotImplementedError
-        
-        raise TypeError
 class RotlInstruction(BinaryInstruction):
     def register_constant(self, constants: set[int | float]):
         pass
@@ -530,8 +456,6 @@ def get_type(var: any, target: Target) -> str:
                 if var.c_type == double: return 'simd::Vec512f64'
                 return f'simd::Vec512{retrieve_name(var.c_type)[0]}{sizeof(var.c_type) * 8}'
             
-            case Target.MASM64_AVX : return '__m128' if var.c_type == float else ('__m128d' if var.c_type == double else '__m128i')
-            case Target.MASM64_AVX2: return '__m256' if var.c_type == float else ('__m256d' if var.c_type == double else '__m256i')
             case _: raise NotImplementedError
             
     if isinstance(var, Scalar) or isinstance(var, ScalarMemoryArray):
@@ -540,14 +464,7 @@ def get_type(var: any, target: Target) -> str:
     if var is None:
         return 'void'
     
-    return retrieve_name(var) 
-
-def get_reg_simd_name(target: Target) -> str:
-    match target:
-        case Target.MASM64_AVX: return 'xmm'
-        case Target.MASM64_AVX2: return 'ymm'
-        #case Target.MASM64_AVX512: return 'zmm'
-        case _: raise NotImplementedError
+    return retrieve_name(var)
 
 class Function:
     result_type: ctype
@@ -590,14 +507,6 @@ class Function:
         self.name = retrieve_name(self)
         if not self.name or self.name == 'self':
             raise NameError('Please provide a name for the function')
-    
-    def get_includes(self, includes: set[str]):
-        for target in self.targets:
-            match target:
-                case Target.PLAIN_C | Target.SSE2 | Target.AVX | Target.AVX2 | Target.AVX512:
-                    pass
-                case Target.MASM64_AVX | Target.MASM64_AVX2: pass
-                case _: raise NotImplementedError
     
     def __get_params_definition(self, target: Target) -> str:
         result = '('
@@ -648,57 +557,57 @@ class Function:
             self.instructions_with_rot = deepcopy(self.instructions)
         old_params = self.params
                     
-        if Target.MASM64_AVX in self.targets or Target.MASM64_AVX2 in self.targets:
-            # Last time we use the register
-            last_use: dict[Vector, int] = {}
-            for i, instruction in enumerate(self.instructions):
-                for j in range(i+1, len(self.instructions)):
-                    if self.instructions[j].use_value(instruction.result):
-                        last_use[instruction.result] = j
+        # if Target.MASM64_AVX in self.targets or Target.MASM64_AVX2 in self.targets:
+        #     # Last time we use the register
+        #     last_use: dict[Vector, int] = {}
+        #     for i, instruction in enumerate(self.instructions):
+        #         for j in range(i+1, len(self.instructions)):
+        #             if self.instructions[j].use_value(instruction.result):
+        #                 last_use[instruction.result] = j
 
-            tmp_in_use: list[bool] = [False] * 64
-            tmp_reset: list[list[int]] =[ [] for _ in range(len(self.instructions)) ]
-            x64_registers: set[str] = set()
-            num_mem_loads, num_mem_stores, num_logical_arithmetic, num_shifts = 0, 0, 0, 0
-            tmps_vector = set()
-            for i, instruction in enumerate(self.instructions):
-                # Reset elements
-                for index in tmp_reset[i]:
-                    tmp_in_use[index] = False
+        #     tmp_in_use: list[bool] = [False] * 64
+        #     tmp_reset: list[list[int]] =[ [] for _ in range(len(self.instructions)) ]
+        #     x64_registers: set[str] = set()
+        #     num_mem_loads, num_mem_stores, num_logical_arithmetic, num_shifts = 0, 0, 0, 0
+        #     tmps_vector = set()
+        #     for i, instruction in enumerate(self.instructions):
+        #         # Reset elements
+        #         for index in tmp_reset[i]:
+        #             tmp_in_use[index] = False
                 
-                if instruction.result and instruction.result.is_tmp() and not isinstance(instruction, LoadInstruction):
-                    # Reuse variables
-                    if hasattr(instruction, 'operand1') and isinstance(instruction.operand1, Vector) and instruction.operand1.name and \
-                        instruction.operand1 not in tmps_vector and instruction.operand1 in last_use and last_use[instruction.operand1] <= i:
-                        instruction.result.name = instruction.operand1.name
-                    elif hasattr(instruction, 'operand2') and isinstance(instruction.operand2, Vector) and instruction.operand2.name and \
-                        instruction.operand2 not in tmps_vector and instruction.operand2 in last_use and last_use[instruction.operand2] <= i:
-                        instruction.result.name = instruction.operand2.name
-                    else:
-                        tmp_index = tmp_in_use.index(False)
-                        instruction.result.name = f't{tmp_index}'
-                        tmp_in_use[tmp_index] = True
-                        tmp_reset[last_use[instruction.result]].append(tmp_index)
-                        tmps_vector.add(instruction.result)
+        #         if instruction.result and instruction.result.is_tmp() and not isinstance(instruction, LoadInstruction):
+        #             # Reuse variables
+        #             if hasattr(instruction, 'operand1') and isinstance(instruction.operand1, Vector) and instruction.operand1.name and \
+        #                 instruction.operand1 not in tmps_vector and instruction.operand1 in last_use and last_use[instruction.operand1] <= i:
+        #                 instruction.result.name = instruction.operand1.name
+        #             elif hasattr(instruction, 'operand2') and isinstance(instruction.operand2, Vector) and instruction.operand2.name and \
+        #                 instruction.operand2 not in tmps_vector and instruction.operand2 in last_use and last_use[instruction.operand2] <= i:
+        #                 instruction.result.name = instruction.operand2.name
+        #             else:
+        #                 tmp_index = tmp_in_use.index(False)
+        #                 instruction.result.name = f't{tmp_index}'
+        #                 tmp_in_use[tmp_index] = True
+        #                 tmp_reset[last_use[instruction.result]].append(tmp_index)
+        #                 tmps_vector.add(instruction.result)
                     
-                # Count registers
-                if instruction.result and instruction.result.name:
-                    x64_registers.add(instruction.result.name)
-                # Count instructions
-                if isinstance(instruction, LoadInstruction): num_mem_loads += 1
-                if isinstance(instruction, StoreInstruction): num_mem_stores += 1
-                if isinstance(instruction, LogicalInstruction) or isinstance(instruction, AddInstruction): num_logical_arithmetic += 1
-                if isinstance(instruction, RotlInstruction): num_shifts += 2; num_logical_arithmetic += 1
-                if isinstance(instruction, ShiftLInstruction) or isinstance(instruction, ShiftRInstruction): num_shifts += 1
+        #         # Count registers
+        #         if instruction.result and instruction.result.name:
+        #             x64_registers.add(instruction.result.name)
+        #         # Count instructions
+        #         if isinstance(instruction, LoadInstruction): num_mem_loads += 1
+        #         if isinstance(instruction, StoreInstruction): num_mem_stores += 1
+        #         if isinstance(instruction, LogicalInstruction) or isinstance(instruction, AddInstruction): num_logical_arithmetic += 1
+        #         if isinstance(instruction, RotlInstruction): num_shifts += 2; num_logical_arithmetic += 1
+        #         if isinstance(instruction, ShiftLInstruction) or isinstance(instruction, ShiftRInstruction): num_shifts += 1
             
-            # Show data
-            print(f'Function: {colored(self.name, 'green')}')
-            print(f'\tSIMD Register: {len(x64_registers)} / 16')
-            print(f'\tInstructions: {len(self.instructions)}')
-            print(f'\tMemLoads: {num_mem_loads}')
-            print(f'\tMemStores: {num_mem_stores}')
-            print(f'\tLogicalArithmetics: {num_logical_arithmetic}')
-            print(f'\tShifts: {num_shifts}')
+        #     # Show data
+        #     print(f'Function: {colored(self.name, 'green')}')
+        #     print(f'\tSIMD Register: {len(x64_registers)} / 16')
+        #     print(f'\tInstructions: {len(self.instructions)}')
+        #     print(f'\tMemLoads: {num_mem_loads}')
+        #     print(f'\tMemStores: {num_mem_stores}')
+        #     print(f'\tLogicalArithmetics: {num_logical_arithmetic}')
+        #     print(f'\tShifts: {num_shifts}')
         
         # Generate code for all targets
         for target in self.targets:
@@ -790,26 +699,6 @@ class Function:
                                 output.write(f'\t{ptr_type} {v.name} = reinterpret_cast<{ptr_type}>({v.name}_{target.name.lower()});\n')
                                 
                         output.write('\n')
-                        
-                    case Target.MASM64_AVX | Target.MASM64_AVX2:
-                        x64_abi_params = ['rcx', 'rdx', 'r8', 'r9']
-                        
-                        output.write(f'REG_BYTE_SIZE = {16 if target == Target.MASM64_AVX else 32}\n')
-                        # TODO Support this well
-                        for index,arg in enumerate(self.params):
-                            output.write(f'{arg.name} EQU {x64_abi_params[index]}\n')
-                            
-                        x64_registers: list[str] = []
-                        for instruction in self.instructions:
-                            if instruction.result and instruction.result.name and instruction.result.name not in [reg_name for reg_name in x64_registers]:
-                                x64_registers.append(instruction.result.name)
-                        
-                        # TODO: Use registers depending on var type
-                        for index,var_name in enumerate(x64_registers):
-                            output.write(f'{var_name} EQU {get_reg_simd_name(target)}{index}\n')
-                            
-                        # Function signature
-                        output.write(f'{self.name}_{target.name} PROC ;{self.__get_params_definition(target)} -> {get_type(self.result_type, target)}\n')
                     case _: raise NotImplementedError
                 
                 variable_names = set()
@@ -860,8 +749,6 @@ class Function:
                 match target:
                     case Target.PLAIN_C | Target.SSE2 | Target.AVX | Target.AVX2 | Target.AVX512:          
                         output.write('\n}\n')
-                    case Target.MASM64_AVX | Target.MASM64_AVX2:
-                        output.write(f'\n\n\tvzeroupper\n\tRET\n{self.name}_{target.name} ENDP\n\n')
                     case _: raise NotImplementedError
                     
             output.write('\n')
@@ -891,13 +778,11 @@ def generate_code_one_file(filename: str, targets: set[Target], comments: list[C
         func.targets.sort()
           
     is_header = filename.endswith('.h')  
-    is_masm_file: bool = not is_header and (Target.MASM64_AVX in targets or Target.MASM64_AVX2 in targets) 
     # Constants
     constants: set[int | float] = set()
-    if is_masm_file: 
-        for func in functions:
-            for instruction in func.instructions:
-                instruction.register_constant(constants)
+    for func in functions:
+        for instruction in func.instructions:
+            instruction.register_constant(constants)
     
     with open(filename, 'w') as output:
         # Save comments
@@ -909,47 +794,19 @@ def generate_code_one_file(filename: str, targets: set[Target], comments: list[C
             else:
                 break
         comments = [c for c in comments if c.line >= line]
-        output.write(f'{';' if is_masm_file else '//'} Automatically generated code by SIMD-function library\n\n')
+        output.write('// Automatically generated code by SIMD-function library\n\n')
         
         # Includes
-        # includes: set = set()
-        # for func in functions:
-        #     func.get_includes(includes)
-        # output.writelines([f'#include "{include}"\n' for include in includes])
         if is_header:
             output.write('#include "../src/simd.hpp"\n\n')
         else:
             output.write(
-'''#define SimdScalarType uint32_t
+'''#define SimdScalarType uint64_t
 #include "../src/simd.hpp"
 using namespace simd;
 ''')
         # Constants
-        if len(constants) > 0:
-            if is_masm_file:
-                output.write(
-'''CONST SEGMENT READONLY ALIGN(64) 'DATA' ALIAS('.const')
-ALIGN 64
-
-''')
-                for constant in constants:
-                    if isinstance(constant, int):
-                        # TODO Support more int types
-                        output.write(f'const_{hex(constant)} DD ')
-                        for i in range(8 if Target.MASM64_AVX2 in targets else 4):
-                            output.write(f'{"" if i == 0 else ","}{hex(constant).replace('0x', '0')}H')
-                        output.write('\n')
-                    else:
-                        raise NotImplementedError
-                    
-                output.write('\nCONST	ENDS\n\n')
-            else:
-                pass # TODO-------------------------
-                # for constant in constants:
-                #     if isinstance(constant, int):
-                #         # TODO Support more int types
-                #         operand2_expression = f'_mm{'' if target == Target.SSE2 else '256'}_set1_{get_vector_ins_sizeof('', self.operand1.c_type)}({operand2_expression})'
-                #         output.write(f'static const const_{hex(constant)} = ;\n')
+        # TODO: 
             
         # Globals
         if not is_header:
@@ -961,24 +818,6 @@ ALIGN 64
                         global_variables_definition.add(var.to_definition(target))
             
             output.writelines([s.replace('alignas(64)', 'alignas(64) static') for s in global_variables_definition])
-            
-        # begin of code
-        if is_masm_file:
-            output.write('.code\n')
-        
-        # Get macros needed
-        if not is_header:
-            macros = set()
-            for func in functions:
-                for instruction in func.instructions:
-                    if hasattr(instruction, 'used_macros'):
-                        for t in func.targets:
-                            macro = instruction.used_macros(t)
-                            if macro:
-                                macros.add(macro)
-            # Write the macros
-            output.writelines(macros)
-            output.write('\n')
         
         if is_header:
             output.write(
@@ -1009,10 +848,6 @@ extern "C"
 }
 #endif
 ''')
-            
-        # End of file
-        if is_masm_file:
-            output.write('end\n')
     
     # Restore original targets
     for (func, t) in zip(functions, original_targets):
@@ -1023,14 +858,12 @@ def generate_code(filename_root: str = None, include_tests: bool = True):
     c_code_targets: set[Target] = set()
     avx_targets: set[Target] = set()
     avx512_targets: set[Target] = set()
-    masm64_targets: set[Target] = set()
     for func in defined_functions:
         for target in func.targets:
             match target:
-                case Target.PLAIN_C | Target.SSE2:           c_code_targets.add(target)
-                case Target.AVX | Target.AVX2:               avx_targets.add(target)
-                case Target.AVX512:                          avx512_targets.add(target)
-                case Target.MASM64_AVX | Target.MASM64_AVX2: masm64_targets.add(target)
+                case Target.PLAIN_C | Target.SSE2: c_code_targets.add(target)
+                case Target.AVX | Target.AVX2:     avx_targets.add(target)
+                case Target.AVX512:                avx512_targets.add(target)
                 case _: raise NotImplementedError   
     
     comments: list[Comment] = get_comments()
@@ -1039,40 +872,37 @@ def generate_code(filename_root: str = None, include_tests: bool = True):
         filename_root = get_function_definition_filename().removesuffix('.py')
     
     # Generate code
-    generate_code_one_file(filename_root + ".h", c_code_targets | avx_targets | avx512_targets | masm64_targets, comments)
+    generate_code_one_file(filename_root + ".h", c_code_targets | avx_targets | avx512_targets, comments)
     if len(c_code_targets) > 0: generate_code_one_file(filename_root + ".cpp"       , c_code_targets, comments)
     if len(avx_targets)    > 0: generate_code_one_file(filename_root + "_avx.cpp"   , avx_targets   , comments)
     if len(avx512_targets) > 0: generate_code_one_file(filename_root + "_avx512.cpp", avx512_targets, comments)
-    for comment in comments:
-        comment.comment = comment.comment.replace('//', ';')
-    if len(masm64_targets) > 0:
-        generate_code_one_file(filename_root + ".asm", masm64_targets, comments)
     
     # Generate Google Tests
-    if include_tests:
-        with open(path.dirname(filename_root) + '/CMakeLists.txt', 'w') as cmakelist:
-            # Save comments
-            line = 1
-            for comment in comments:
-                if comment.line == line:
-                    cmakelist.write(comment.comment.replace(';', '#'))
-                    line += 1
-                else:
-                    break
-            cmakelist.write(
+    if not include_tests: return
+    
+    with open(path.dirname(filename_root) + '/CMakeLists.txt', 'w') as cmakelist:
+        # Save comments
+        line = 1
+        for comment in comments:
+            if comment.line == line:
+                cmakelist.write(comment.comment.replace('//', '#'))
+                line += 1
+            else:
+                break
+        cmakelist.write(
 '''# Automatically generated code by SIMD-function library
 
 cmake_minimum_required (VERSION 3.12)
 
 ''')
-            cmakelist.write(f'project ({Path(filename_root).name} VERSION 1.0.0.0 DESCRIPTION "Google Test and Benchmark the automatically generated code" LANGUAGES CXX ASM_MASM)')
-            cmakelist.write(
+        cmakelist.write(f'project ({Path(filename_root).name} VERSION 1.0.0.0 DESCRIPTION "Google Test and Benchmark the automatically generated code" LANGUAGES CXX ASM_MASM)')
+        cmakelist.write(
 '''
 
 # Enable Hot Reload for MSVC compilers if supported.
 if (POLICY CMP0141)
-  cmake_policy(SET CMP0141 NEW)
-  set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
+cmake_policy(SET CMP0141 NEW)
+set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
 endif()
 
 ###############################################################################################################
@@ -1088,10 +918,10 @@ FetchContent_MakeAvailable(googletest wy)
 
 enable_testing()
 ''')
-            cmakelist.write(f'add_executable(runUnitTests tests_{Path(filename_root).name}.cpp "../src/cpuid.cpp" "{Path(filename_root).name}.cpp" {\
-                '' if len(avx_targets)    == 0 else f'"{Path(filename_root).name}_avx.cpp"'} {\
-                '' if len(avx512_targets) == 0 else f'"{Path(filename_root).name}_avx512.cpp"'})\n')
-            cmakelist.write(
+        cmakelist.write(f'add_executable(runUnitTests tests_{Path(filename_root).name}.cpp "../src/cpuid.cpp" "{Path(filename_root).name}.cpp" {\
+            '' if len(avx_targets)    == 0 else f'"{Path(filename_root).name}_avx.cpp"'} {\
+            '' if len(avx512_targets) == 0 else f'"{Path(filename_root).name}_avx512.cpp"'})\n')
+        cmakelist.write(
 '''set_property(TARGET runUnitTests PROPERTY CXX_STANDARD 20) # C++ language to use
 target_link_libraries(runUnitTests PRIVATE gtest_main wy)
 
@@ -1102,28 +932,28 @@ gtest_discover_tests(runUnitTests)
 # Benchmark
 ###############################################################################################################
 ''')
-            cmakelist.write('if(CMAKE_COMPILER_IS_GNUCXX)\n')
-            if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS -mavx2)\n')
-            if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS -mavx512f)\n')
+        cmakelist.write('if(CMAKE_COMPILER_IS_GNUCXX)\n')
+        if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS -mavx2)\n')
+        if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS -mavx512f)\n')
+        
+        cmakelist.write('elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")\n')
+        if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS "-mavx2 -flto -fomit-frame-pointer -O3 -DNDEBUG")\n')
+        if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS "-mavx512f -flto -fomit-frame-pointer -O3 -DNDEBUG")\n')
+        
+        cmakelist.write('elseif(GLM_USE_INTEL)\n')
+        if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS /QxAVX)\n')
+        if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS /QxAVX512F)\n')
+        
+        cmakelist.write('elseif(MSVC)\n')
+        if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS /arch:AVX)\n')
+        if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS /arch:AVX512)\n')
+        cmakelist.write('endif()\n\n')
             
-            cmakelist.write('elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")\n')
-            if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS "-mavx2 -flto -fomit-frame-pointer -O3 -DNDEBUG")\n')
-            if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS "-mavx512f -flto -fomit-frame-pointer -O3 -DNDEBUG")\n')
-            
-            cmakelist.write('elseif(GLM_USE_INTEL)\n')
-            if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS /QxAVX)\n')
-            if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS /QxAVX512F)\n')
-            
-            cmakelist.write('elseif(MSVC)\n')
-            if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS /arch:AVX)\n')
-            if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS /arch:AVX512)\n')
-            cmakelist.write('endif()\n\n')
-                
-            cmakelist.write(f'add_executable(runBenchmark "benchmark_{Path(filename_root).name}.cpp" "../src/cpuid.cpp" "arch_x64.asm" "{Path(filename_root).name}.cpp" {\
-                '' if len(avx_targets)    == 0 else f'"{Path(filename_root).name}_avx.cpp"'} {\
-                '' if len(avx512_targets) == 0 else f'"{Path(filename_root).name}_avx512.cpp"'})')      
+        cmakelist.write(f'add_executable(runBenchmark "benchmark_{Path(filename_root).name}.cpp" "../src/cpuid.cpp" "arch_x64.asm" "{Path(filename_root).name}.cpp" {\
+            '' if len(avx_targets)    == 0 else f'"{Path(filename_root).name}_avx.cpp"'} {\
+            '' if len(avx512_targets) == 0 else f'"{Path(filename_root).name}_avx512.cpp"'})')      
 
-            cmakelist.write(
+        cmakelist.write(
 '''
 set_property(TARGET runBenchmark PROPERTY CXX_STANDARD 20)	 # C++ language to use
 
@@ -1132,72 +962,72 @@ set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(benchmark)
 target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::benchmark_main)
 ''')
-        
-        with open(path.dirname(filename_root) + f'/tests_{Path(filename_root).name}.cpp', 'w') as tests:
-            tests.write(f'#include <gtest/gtest.h>\n#include "{Path(filename_root).name}.h"\n#include <wy.hpp>\n#include "reference_implementation.c"\n\n')
-            for func in defined_functions:
-                for target in func.targets:
-                    for parallel_factor in func.parallelization_factor[target]:
-                        parallel_suffix = '' if parallel_factor == 1 and len(func.parallelization_factor[target]) == 1 else f'_x{parallel_factor}'
-                        tests.write(f'TEST({Path(filename_root).name}, {func.name}_{target.name}{parallel_suffix})')
-                        tests.write('\n{\n')
-                        tests.write(f'\tif (!simd::cpu_supports(simd::CpuFeatures::{target.name}))\n\t\tGTEST_SKIP() << "No {target.name}";\n\n')
-                        tests.write(f'\tconstexpr size_t parallel_factor = {parallel_factor};\n')
-                        tests.write(f'\tconstexpr size_t parallelism = parallel_factor * sizeof({get_type(func.params[0], target)}) / sizeof(uint32_t);\n')
-                        tests.write('\n')
+    
+    with open(path.dirname(filename_root) + f'/tests_{Path(filename_root).name}.cpp', 'w') as tests:
+        tests.write(f'#include <gtest/gtest.h>\n#include "{Path(filename_root).name}.h"\n#include <wy.hpp>\n#include "reference_implementation.c"\n\n')
+        for func in defined_functions:
+            for target in func.targets:
+                for parallel_factor in func.parallelization_factor[target]:
+                    parallel_suffix = '' if parallel_factor == 1 and len(func.parallelization_factor[target]) == 1 else f'_x{parallel_factor}'
+                    tests.write(f'TEST({Path(filename_root).name}, {func.name}_{target.name}{parallel_suffix})')
+                    tests.write('\n{\n')
+                    tests.write(f'\tif (!simd::cpu_supports(simd::CpuFeatures::{target.name}))\n\t\tGTEST_SKIP() << "No {target.name}";\n\n')
+                    tests.write(f'\tconstexpr size_t parallel_factor = {parallel_factor};\n')
+                    tests.write(f'\tconstexpr size_t parallelism = parallel_factor * sizeof({get_type(func.params[0], target)}) / sizeof(uint32_t);\n')
+                    tests.write('\n')
+                    
+                    # Function params declaration
+                    for arg in func.params:
+                        param_suffix = f'[{arg.num_elems} * parallelism]' if isinstance(arg, MemoryArray) else ''
+                        tests.write(f'\t{get_type(arg.c_type, target)} {arg.name}{param_suffix};\n')
+
+                        param_suffix = f'[{arg.num_elems} * parallel_factor]' if isinstance(arg, MemoryArray) else ''
+                        tests.write(f'\t{get_type(arg, target)} {arg.name}_simd{param_suffix};\n')
                         
-                        # Function params declaration
-                        for arg in func.params:
-                            param_suffix = f'[{arg.num_elems} * parallelism]' if isinstance(arg, MemoryArray) else ''
-                            tests.write(f'\t{get_type(arg.c_type, target)} {arg.name}{param_suffix};\n')
+                        tests.write(f'\tASSERT_EQ(sizeof({arg.name}), sizeof({arg.name}_simd));\n')                    
+                    
+                    tests.write('''
+// Create a pseudo-random generator
+wy::rand r;
 
-                            param_suffix = f'[{arg.num_elems} * parallel_factor]' if isinstance(arg, MemoryArray) else ''
-                            tests.write(f'\t{get_type(arg, target)} {arg.name}_simd{param_suffix};\n')
-                            
-                            tests.write(f'\tASSERT_EQ(sizeof({arg.name}), sizeof({arg.name}_simd));\n')                    
+for (size_t i = 0; i < 64; i++)
+{
+''')
+                    for arg in func.params:
+                        tests.write(f'\t\tr.generate_stream<{get_type(arg.c_type, target)}>({arg.name});\n')
+                        tests.write('\t\t// Copy values to simd\n')
                         
-                        tests.write('''
-	// Create a pseudo-random generator
-	wy::rand r;
+                        tests.write(f'\t\tfor (size_t j = 0; j < std::size({arg.name}); j++)\n')
+                        tests.write(f'\t\t\treinterpret_cast<{get_type(arg.c_type, target)}*>({arg.name}_simd)[j / {arg.num_elems} + (j % {arg.num_elems}) * parallelism] = {arg.name}[j];\n')
 
-	for (size_t i = 0; i < 64; i++)
-	{
+                    tests.write('''
+    // Hash
+    for (size_t j = 0; j < parallelism; j++)\n''')
+                    tests.write(f'\t\t\t{Path(filename_root).name}_transform(')
+                    param_prefix = ''
+                    for arg in func.params:
+                        tests.write(f'{param_prefix}{arg.name} + j * {arg.num_elems}')
+                        param_prefix = ', '
+
+                    tests.write(f');\n\t\t{func.name}_{target.name.lower()}{parallel_suffix}(')
+                    param_prefix = ''
+                    for arg in func.params:
+                        tests.write(f'{param_prefix}{arg.name}_simd')
+                        param_prefix = ', '
+                    tests.write(''');
+
+    // Compare results
 ''')
-                        for arg in func.params:
-                            tests.write(f'\t\tr.generate_stream<{get_type(arg.c_type, target)}>({arg.name});\n')
-                            tests.write('\t\t// Copy values to simd\n')
-                            
-                            tests.write(f'\t\tfor (size_t j = 0; j < std::size({arg.name}); j++)\n')
-                            tests.write(f'\t\t\treinterpret_cast<{get_type(arg.c_type, target)}*>({arg.name}_simd)[j / {arg.num_elems} + (j % {arg.num_elems}) * parallelism] = {arg.name}[j];\n')
-  
-                        tests.write('''
-		// Hash
-		for (size_t j = 0; j < parallelism; j++)\n''')
-                        tests.write(f'\t\t\t{Path(filename_root).name}_transform(')
-                        param_prefix = ''
-                        for arg in func.params:
-                            tests.write(f'{param_prefix}{arg.name} + j * {arg.num_elems}')
-                            param_prefix = ', '
-
-                        tests.write(f');\n\t\t{func.name}_{target.name.lower()}{parallel_suffix}(')
-                        param_prefix = ''
-                        for arg in func.params:
-                            tests.write(f'{param_prefix}{arg.name}_simd')
-                            param_prefix = ', '
-                        tests.write(''');
-
-		// Compare results
-''')
-                        for arg in func.params:
-                            tests.write(f'\t\tfor (size_t j = 0; j < std::size({arg.name}); j++)\n')
-                            tests.write(f'\t\t\tASSERT_EQ(reinterpret_cast<{get_type(arg.c_type, target)}*>({arg.name}_simd)[j / {arg.num_elems} + (j % {arg.num_elems}) * parallelism], {arg.name}[j]);\n')
-                            
-                        tests.write(
+                    for arg in func.params:
+                        tests.write(f'\t\tfor (size_t j = 0; j < std::size({arg.name}); j++)\n')
+                        tests.write(f'\t\t\tASSERT_EQ(reinterpret_cast<{get_type(arg.c_type, target)}*>({arg.name}_simd)[j / {arg.num_elems} + (j % {arg.num_elems}) * parallelism], {arg.name}[j]);\n')
+                        
+                    tests.write(
 '''    }
 }
 ''')
-            
-        with open(path.dirname(filename_root) + f'/benchmark_{Path(filename_root).name}.cpp', 'w') as benchmark:
+        
+    with open(path.dirname(filename_root) + f'/benchmark_{Path(filename_root).name}.cpp', 'w') as benchmark:
             benchmark.write(f'#include <benchmark/benchmark.h>\n#include "{Path(filename_root).name}.h"\n\n')
             
             for func in defined_functions:
@@ -1247,7 +1077,7 @@ static void bm_asm_func(benchmark::State& _benchmark_state) {
 BENCHMARK(bm_asm_func);
 ''')
 
-import subprocess
+from subprocess import run
 def build_and_run(cmake_exe: str, run_tests: bool = True, run_benchmark: bool = True, sde_exe: str = None, 
                   sde_test_cpus: list[str] = ['-p4p', '-snb', '-hsw', '-knm']):# Pentium4 Prescott [SSE2], Sandy Bridge [AVX], Haswell [AVX2], Knights Mill [AVX512]
     
@@ -1255,8 +1085,8 @@ def build_and_run(cmake_exe: str, run_tests: bool = True, run_benchmark: bool = 
         cmake_exe = 'cmake'
     
     script_dir = path.dirname(get_function_definition_filename())
-    subprocess.run([cmake_exe, '-S', f'{script_dir}', '-B', f'{script_dir}/out/build'])
-    subprocess.run([cmake_exe, '--build', f'{script_dir}/out/build', '--config', 'Release'])
+    run([cmake_exe, '-S', f'{script_dir}', '-B', f'{script_dir}/out/build'])
+    run([cmake_exe, '--build', f'{script_dir}/out/build', '--config', 'Release'])
     
     if run_tests:
         if sde_exe:
@@ -1305,14 +1135,12 @@ def build_and_run(cmake_exe: str, run_tests: bool = True, run_benchmark: bool = 
                     print(f'\n{colored(option_to_cpu_name[cpu_option], 'yellow')}')
                 else:
                     print(f'\n{colored('Unknown CPU option', 'red')}')
-                subprocess.run([sde_exe, cpu_option, '--', f'{script_dir}/out/build/Release/runUnitTests'])
+                    run([sde_exe, cpu_option, '--', f'{script_dir}/out/build/Release/runUnitTests'])
         else:
-            subprocess.run([f'{script_dir}/out/build/Release/runUnitTests'])
+            run([f'{script_dir}/out/build/Release/runUnitTests'])
 
     if run_benchmark:
-        subprocess.run([f'{script_dir}/out/build/Release/runBenchmark'])
-        
-#register_at_exit(generate_code)
+        run([f'{script_dir}/out/build/Release/runBenchmark'])
    
 ##################################################################################
 # SIMD data types
