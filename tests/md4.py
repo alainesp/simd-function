@@ -95,9 +95,14 @@ with Function(void)(state, block) as md4_block_:
     
 # Define targets
 md4_block.targets  = [Target.PLAIN_C, Target.SSE2, Target.AVX, Target.AVX2]
-md4_block_.targets = [Target.AVX512]
+md4_block_.targets = [Target.AVX2, Target.AVX512]
 md4_block.parallelization_factor [Target.SSE2  ] = [2, 3, 4]
 md4_block.parallelization_factor [Target.AVX   ] = [2, 3, 4]
 md4_block.parallelization_factor [Target.AVX2  ] = [2, 3, 4]
+
+md4_block_.parallelization_factor [Target.AVX2 ] = [2, 3, 4]
 md4_block_.parallelization_factor[Target.AVX512] = [2, 3, 4]
 generate_code()
+build_and_run('C:/Program Files/CMake/bin/cmake.exe', run_benchmark=True, run_tests=True, 
+              sde_test_cpus=['-knm'], 
+              sde_exe='C:/Users/Alain/Downloads/sde-external-9.33.0-2024-01-07-win/sde.exe')

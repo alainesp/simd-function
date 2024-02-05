@@ -369,6 +369,9 @@ class TernaryLoginInstruction(BinaryInstruction):
 class NotInstruction(UnaryInstruction):
     def __init__(self, result, operand) -> None:
         super().__init__(result, operand, '~')
+class MinusInstruction(UnaryInstruction):
+    def __init__(self, result, operand) -> None:
+        super().__init__(result, operand, '-')
         
 # Shift/Rotations
 class ShiftLInstruction(BinaryInstruction):
@@ -427,10 +430,10 @@ class Repeat:
     count: int
     
     def __enter__(self):
-        defined_functions[-1].instructions.append(RepeatInstruction(self.count, False))
+        defined_functions[-1].add_instruction(RepeatInstruction(self.count, False))
     
     def __exit__(self, exception_type, exception_value, traceback):
-        defined_functions[-1].instructions.append(RepeatInstruction(self.count, True))
+        defined_functions[-1].add_instruction(RepeatInstruction(self.count, True))
     
 ##################################################################################
 # SIMD function
@@ -475,6 +478,7 @@ class Function:
     parallelization_factor: dict[Target, list[int]]
     exited: bool = False
     global_vars: set
+    scalar_type: ctype = None
     
     def __init__(self, result_type: ctype = void, targets: list[Target] = default_targets):
         self.result_type = result_type
@@ -507,6 +511,17 @@ class Function:
         self.name = retrieve_name(self)
         if not self.name or self.name == 'self':
             raise NameError('Please provide a name for the function')
+    
+    def add_instruction(self, instruction: Instruction, scalar_type: ctype = None):
+        # Check operators operate on the same scalar type
+        if scalar_type:
+            if self.scalar_type:
+                if self.scalar_type != scalar_type:
+                    raise TypeError
+            else:
+                self.scalar_type = scalar_type
+        
+        self.instructions.append(instruction)
     
     def __get_params_definition(self, target: Target) -> str:
         result = '('
@@ -800,11 +815,7 @@ def generate_code_one_file(filename: str, targets: set[Target], comments: list[C
         if is_header:
             output.write('#include "../src/simd.hpp"\n\n')
         else:
-            output.write(
-'''#define SimdScalarType uint64_t
-#include "../src/simd.hpp"
-using namespace simd;
-''')
+            output.write(f'#define SimdScalarType {get_type(functions[0].scalar_type, Target.PLAIN_C)}\n#include "../src/simd.hpp"\nusing namespace simd;\n')
         # Constants
         # TODO: 
             
@@ -1074,7 +1085,7 @@ static void bm_asm_func(benchmark::State& _benchmark_state) {
 		asm_func(state, block);
 		num_calls++;
 	}
-	_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * 16, benchmark::Counter::kIsRate);
+	_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * 24, benchmark::Counter::kIsRate);
 }
 BENCHMARK(bm_asm_func);
 ''')
@@ -1137,7 +1148,7 @@ def build_and_run(cmake_exe: str, run_tests: bool = True, run_benchmark: bool = 
                     print(f'\n{colored(option_to_cpu_name[cpu_option], 'yellow')}')
                 else:
                     print(f'\n{colored('Unknown CPU option', 'red')}')
-                    run([sde_exe, cpu_option, '--', f'{script_dir}/out/build/Release/runUnitTests'])
+                run([sde_exe, cpu_option, '--', f'{script_dir}/out/build/Release/runUnitTests'])
         else:
             run([f'{script_dir}/out/build/Release/runUnitTests'])
 
@@ -1166,18 +1177,18 @@ class Variable:
         self.constant_value = constant_value
         
     # Checks
-    def check_uninitialize(self):
+    def __check_uninitialize(self):
         if self.is_uninitialize:
             raise ValueError('The variable is uninitialize')
-    def check_same_type(self, other):
+    def __check_same_type(self, other):
         if self.c_type != other.c_type:
             raise ValueError('The two vectors need to be of the same type')
-    def perform_checks(self, other):
-        self.check_uninitialize()
+    def __perform_checks(self, other):
+        self.__check_uninitialize()
         
         if isinstance(other, Vector) or isinstance(other, Scalar):
-            other.check_uninitialize()
-            self.check_same_type(other)
+            other.__check_uninitialize()
+            self.__check_same_type(other)
         elif not isinstance(other, int):
             raise TypeError('Operation only support Vectors or integer constants')
     
@@ -1190,8 +1201,8 @@ class Variable:
     ########################################################################
     # Binary Operators
     ########################################################################
-    def _binary_op(self: "Scalar | Vector", other: "int | float | Scalar | Vector", op, instruction: Instruction):
-        self.perform_checks(other)
+    def __binary_op(self: "Variable", other: "int | float | Variable", op, instruction: Instruction, check_scalar_type: bool = True):
+        self.__perform_checks(other)
         
         # Constant folding
         if self.is_constant and isinstance(other, int):
@@ -1202,7 +1213,7 @@ class Variable:
             return self
         
         self.find_name()
-        if isinstance(other, Vector) or isinstance(other, Scalar):
+        if isinstance(other, Variable):
             other.find_name()
         
         if isinstance(self, Vector) or isinstance(other, Vector):
@@ -1211,42 +1222,43 @@ class Variable:
             result = Scalar(self.c_type, is_uninitialize=False)
         else:
             raise TypeError
-        defined_functions[-1].instructions.append(instruction(result, self, other))
+        
+        defined_functions[-1].add_instruction(instruction(result, self, other), self.c_type if check_scalar_type else None)
         return result
         
     def __add__(self, other):
-        return self._binary_op(other, operator.__add__, AddInstruction)
+        return self.__binary_op(other, operator.__add__, AddInstruction)
     def __sub__(self, other):
-        return self._binary_op(other, operator.__sub__, SubInstruction)
+        return self.__binary_op(other, operator.__sub__, SubInstruction)
     def __mul__(self, other):	
-        return self._binary_op(other, operator.__mul__, ProductInstruction)
+        return self.__binary_op(other, operator.__mul__, ProductInstruction)
     def __truediv__(self, other):
-        return self._binary_op(other, operator.__floordiv__, DivisionInstruction)	
+        return self.__binary_op(other, operator.__floordiv__, DivisionInstruction)
     def __floordiv__(self, other):
-        return self._binary_op(other, operator.__floordiv__, DivisionInstruction)	
+        return self.__binary_op(other, operator.__floordiv__, DivisionInstruction)
     def __mod__(self, other):
-        return self._binary_op(other, operator.__mod__, ModuloInstruction)
+        return self.__binary_op(other, operator.__mod__, ModuloInstruction)
     def __pow__(self, other):
         if other == 2:
-            return self._binary_op(self, operator.__mul__, ProductInstruction)
+            return self.__binary_op(self, operator.__mul__, ProductInstruction)
         else:
             raise NotImplementedError
     
     # Shift/Rotations
     def __rshift__(self, other):
-         return self._binary_op(other, operator.__rshift__, ShiftRInstruction)
+         return self.__binary_op(other, operator.__rshift__, ShiftRInstruction)
     def __lshift__(self, other):
-         return self._binary_op(other, operator.__lshift__, ShiftLInstruction)
+         return self.__binary_op(other, operator.__lshift__, ShiftLInstruction)
     def rotl(self, other):
-        return self._binary_op(other, raise_exception, RotlInstruction)
+        return self.__binary_op(other, raise_exception, RotlInstruction)
     
     # Logical
     def __and__(self, other):
-        return self._binary_op(other, operator.__and__, AndInstruction)
+        return self.__binary_op(other, operator.__and__, AndInstruction, False)
     def __or__(self, other):
-        return self._binary_op(other, operator.__or__, OrInstruction)
+        return self.__binary_op(other, operator.__or__, OrInstruction, False)
     def __xor__(self, other):
-        return self._binary_op(other, operator.__xor__, XorInstruction)
+        return self.__binary_op(other, operator.__xor__, XorInstruction, False)
     
     ########################################################################
     # Comparison Operators
@@ -1262,15 +1274,12 @@ class Variable:
     ########################################################################
     # Unary Operators
     ########################################################################
-    # Operator	Magic Method
-    # –	__neg__(self)
-    # +	__pos__(self)
-    def __invert__(self):# ~
-        self.perform_checks(self)
+    def __unary_op(self, op, instruction: Instruction, scalar_type: ctype):
+        self.__perform_checks(self)
         
         # Constant folding
         if self.is_constant:
-            self.constant_value = ~self.constant_value
+            self.constant_value = op(self.constant_value)
             return self
         
         self.find_name()
@@ -1279,8 +1288,13 @@ class Variable:
         elif isinstance(self, Scalar): result = Scalar(self.c_type, is_uninitialize=False)
         else: raise TypeError
         
-        defined_functions[-1].instructions.append(NotInstruction(result, self))
+        defined_functions[-1].add_instruction(Instruction(result, self), ctype)
         return result
+    # Operators
+    def __neg__(self): # -
+        return self.__unary_op(operator.__neg__, MinusInstruction, self.c_type)
+    def __invert__(self):# ~
+        return self.__unary_op(operator.__invert__, NotInstruction, None)
     
 class Vector(Variable):
     pass
@@ -1334,7 +1348,7 @@ def ternary_logic(op1: int | Variable, op2: int | Variable, op3: int | Variable,
         raise NotImplementedError
         
     result = Vector(op1.c_type, is_uninitialize=False)
-    defined_functions[-1].instructions.append(TernaryLoginInstruction(result, op1, op2, op3, imm8))
+    defined_functions[-1].add_instruction(TernaryLoginInstruction(result, op1, op2, op3, imm8))
     return result
     
 class MemoryArray:
@@ -1404,7 +1418,8 @@ class MemoryArray:
             result = Scalar(self.c_type, is_uninitialize=False)
         else:
             raise TypeError
-        defined_functions[-1].instructions.append(LoadInstruction(result, memory=self, index=index))
+        
+        defined_functions[-1].add_instruction(LoadInstruction(result, memory=self, index=index))
         if self.is_global:
             defined_functions[-1].global_vars.add(self)
         return result
@@ -1417,7 +1432,7 @@ class MemoryArray:
             value.find_name()
         
         assert value.c_type == self.c_type
-        defined_functions[-1].instructions.append(StoreInstruction(operand=value, memory=self, index=index))
+        defined_functions[-1].add_instruction(StoreInstruction(operand=value, memory=self, index=index))
         if self.is_global:
             defined_functions[-1].global_vars.add(self)
         
@@ -1425,14 +1440,14 @@ class MemoryArray:
         self.find_name()
         if not isinstance(other, int) and not isinstance(other, Scalar):
             raise TypeError    
-        defined_functions[-1].instructions.append(AddInstruction(self, self, other))
+        defined_functions[-1].add_instruction(AddInstruction(self, self, other))
         return self
         
     def __sub__(self, other):
         self.find_name()
         if not isinstance(other, int) and not isinstance(other, Scalar):
             raise TypeError    
-        defined_functions[-1].instructions.append(SubInstruction(self, self, other))
+        defined_functions[-1].add_instruction(SubInstruction(self, self, other))
         return self
         
 class VectorMemoryArray(MemoryArray):
