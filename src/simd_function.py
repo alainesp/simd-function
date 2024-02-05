@@ -904,33 +904,6 @@ if (POLICY CMP0141)
 cmake_policy(SET CMP0141 NEW)
 set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
 endif()
-
-###############################################################################################################
-# Testing
-###############################################################################################################
-include(FetchContent)
-SET(BUILD_GMOCK OFF)
-FetchContent_Declare(googletest URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip)
-FetchContent_Declare(wy URL https://github.com/alainesp/wy/archive/refs/heads/main.zip)
-# For Windows: Prevent overriding the parent project's compiler/linker settings
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest wy)
-
-enable_testing()
-''')
-        cmakelist.write(f'add_executable(runUnitTests tests_{Path(filename_root).name}.cpp "../src/cpuid.cpp" "{Path(filename_root).name}.cpp" {\
-            '' if len(avx_targets)    == 0 else f'"{Path(filename_root).name}_avx.cpp"'} {\
-            '' if len(avx512_targets) == 0 else f'"{Path(filename_root).name}_avx512.cpp"'})\n')
-        cmakelist.write(
-'''set_property(TARGET runUnitTests PROPERTY CXX_STANDARD 20) # C++ language to use
-target_link_libraries(runUnitTests PRIVATE gtest_main wy)
-
-include(GoogleTest)
-gtest_discover_tests(runUnitTests)
-
-###############################################################################################################
-# Benchmark
-###############################################################################################################
 ''')
         cmakelist.write('if(CMAKE_COMPILER_IS_GNUCXX)\n')
         if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS -mavx2)\n')
@@ -948,11 +921,40 @@ gtest_discover_tests(runUnitTests)
         if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS /arch:AVX)\n')
         if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS /arch:AVX512)\n')
         cmakelist.write('endif()\n\n')
-            
-        cmakelist.write(f'add_executable(runBenchmark "benchmark_{Path(filename_root).name}.cpp" "../src/cpuid.cpp" "arch_x64.asm" "{Path(filename_root).name}.cpp" {\
-            '' if len(avx_targets)    == 0 else f'"{Path(filename_root).name}_avx.cpp"'} {\
-            '' if len(avx512_targets) == 0 else f'"{Path(filename_root).name}_avx512.cpp"'})')      
+        # Simd library
+        cmakelist.write(f'add_library(SIMDLib STATIC "../src/cpuid.cpp" "{Path(filename_root).name}.cpp"{\
+            '' if len(avx_targets)    == 0 else f' "{Path(filename_root).name}_avx.cpp"'} {\
+            '' if len(avx512_targets) == 0 else f' "{Path(filename_root).name}_avx512.cpp"'})\n')
+        cmakelist.write(
+'''
+set_property(TARGET SIMDLib PROPERTY CXX_STANDARD 20) # C++ language to use
 
+###############################################################################################################
+# Testing
+###############################################################################################################
+include(FetchContent)
+SET(BUILD_GMOCK OFF)
+FetchContent_Declare(googletest URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip)
+FetchContent_Declare(wy URL https://github.com/alainesp/wy/archive/refs/heads/main.zip)
+# For Windows: Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest wy)
+
+enable_testing()
+''')
+        cmakelist.write(f'add_executable(runUnitTests tests_{Path(filename_root).name}.cpp)\n')
+        cmakelist.write(
+'''set_property(TARGET runUnitTests PROPERTY CXX_STANDARD 20) # C++ language to use
+target_link_libraries(runUnitTests PRIVATE gtest_main wy SIMDLib)
+
+include(GoogleTest)
+gtest_discover_tests(runUnitTests)
+
+###############################################################################################################
+# Benchmark
+###############################################################################################################
+''')  
+        cmakelist.write(f'add_executable(runBenchmark "benchmark_{Path(filename_root).name}.cpp" "arch_x64.asm")')
         cmakelist.write(
 '''
 set_property(TARGET runBenchmark PROPERTY CXX_STANDARD 20)	 # C++ language to use
@@ -960,7 +962,7 @@ set_property(TARGET runBenchmark PROPERTY CXX_STANDARD 20)	 # C++ language to us
 FetchContent_Declare(benchmark URL https://github.com/google/benchmark/archive/refs/tags/v1.8.3.zip)
 set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(benchmark)
-target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::benchmark_main)
+target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::benchmark_main SIMDLib)
 ''')
     
     with open(path.dirname(filename_root) + f'/tests_{Path(filename_root).name}.cpp', 'w') as tests:
@@ -973,7 +975,7 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
                     tests.write('\n{\n')
                     tests.write(f'\tif (!simd::cpu_supports(simd::CpuFeatures::{target.name}))\n\t\tGTEST_SKIP() << "No {target.name}";\n\n')
                     tests.write(f'\tconstexpr size_t parallel_factor = {parallel_factor};\n')
-                    tests.write(f'\tconstexpr size_t parallelism = parallel_factor * sizeof({get_type(func.params[0], target)}) / sizeof(uint32_t);\n')
+                    tests.write(f'\tconstexpr size_t parallelism = parallel_factor * sizeof({get_type(func.params[0], target)}) / sizeof({get_type(func.params[0].c_type, target)});\n')
                     tests.write('\n')
                     
                     # Function params declaration
@@ -987,11 +989,11 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
                         tests.write(f'\tASSERT_EQ(sizeof({arg.name}), sizeof({arg.name}_simd));\n')                    
                     
                     tests.write('''
-// Create a pseudo-random generator
-wy::rand r;
+    // Create a pseudo-random generator
+    wy::rand r;
 
-for (size_t i = 0; i < 64; i++)
-{
+    for (size_t i = 0; i < 64; i++)
+    {
 ''')
                     for arg in func.params:
                         tests.write(f'\t\tr.generate_stream<{get_type(arg.c_type, target)}>({arg.name});\n')
@@ -1001,8 +1003,8 @@ for (size_t i = 0; i < 64; i++)
                         tests.write(f'\t\t\treinterpret_cast<{get_type(arg.c_type, target)}*>({arg.name}_simd)[j / {arg.num_elems} + (j % {arg.num_elems}) * parallelism] = {arg.name}[j];\n')
 
                     tests.write('''
-    // Hash
-    for (size_t j = 0; j < parallelism; j++)\n''')
+        // Hash
+        for (size_t j = 0; j < parallelism; j++)\n''')
                     tests.write(f'\t\t\t{Path(filename_root).name}_transform(')
                     param_prefix = ''
                     for arg in func.params:
@@ -1016,7 +1018,7 @@ for (size_t i = 0; i < 64; i++)
                         param_prefix = ', '
                     tests.write(''');
 
-    // Compare results
+        // Compare results
 ''')
                     for arg in func.params:
                         tests.write(f'\t\tfor (size_t j = 0; j < std::size({arg.name}); j++)\n')
