@@ -73,7 +73,7 @@ with Function(void)(state, block) as md5_block:
 ## </summary>
 ## <param name="state">The md5 state</param>
 ## <param name="block">The message to compress</param>
-with Function(void)(state, block) as md5_block_:
+with Function(void)(state, block) as md5_block_avx512:
     # Load state
     a = state[0]
     b = state[1]
@@ -116,11 +116,13 @@ with Function(void)(state, block) as md5_block_:
     
 # Define targets
 md5_block.targets  = [Target.PLAIN_C, Target.SSE2, Target.AVX, Target.AVX2]
-md5_block_.targets = [Target.AVX512]
-md5_block.parallelization_factor [Target.SSE2  ] = [3]
-md5_block.parallelization_factor [Target.AVX   ] = [3]
-md5_block.parallelization_factor [Target.AVX2  ] = [3]
-md5_block_.parallelization_factor[Target.AVX512] = [4]
+md5_block_avx512.targets = [Target.AVX512]
+md5_block.parallelization_factor[Target.SSE2] = [3]
+md5_block.parallelization_factor[Target.AVX ] = [3]
+md5_block.parallelization_factor[Target.AVX2] = [3]
+md5_block_avx512.parallelization_factor[Target.AVX512] = [4]
+md5_block_avx512.name = 'md5_block'
+# Build and run
 generate_code()
 build_and_run('C:/Program Files/CMake/bin/cmake.exe', run_benchmark=True, run_tests=True, 
               sde_test_cpus=['-knm'], 

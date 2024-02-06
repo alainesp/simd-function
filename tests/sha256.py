@@ -100,7 +100,7 @@ with Function(void)(state, W) as sha256_block_avx512:
     
 # Define targets
 sha256_block.targets = [Target.PLAIN_C, Target.SSE2, Target.AVX]
-sha256_block_avx512.targets = [Target.AVX2,Target.AVX512]
+sha256_block_avx512.targets = [Target.AVX2, Target.AVX512]
 sha256_block_avx512.name = 'sha256_block'
 # Build and run
 generate_code()
