@@ -403,10 +403,7 @@ class RotlInstruction(BinaryInstruction):
        
     def get_call(self, target: Target) -> str:
         if target == Target.PLAIN_C or isinstance(self.operand1, Scalar):
-            if self.result.c_type == uint32_t:
-                return '_rotl'
-            elif self.result.c_type == uint64_t:
-                return '_rotl64'
+            return 'rotl'
             
         if isinstance(self.operand2, int):
             return f'rotl<{get_type(self.result.c_type, Target.PLAIN_C)}, {self.operand2:2}>'
@@ -721,7 +718,8 @@ class Function:
                         for v in self.global_vars:
                             if isinstance(v, MemoryArray):
                                 ptr_type = f'{'const ' if v.is_const else ''}{get_type(v, target)}*'
-                                output.write(f'\t{ptr_type} {v.name} = reinterpret_cast<{ptr_type}>({v.name}_{target.name.lower()});\n')
+                                name_suffix = f'{target.name.lower()}' if isinstance(v, VectorMemoryArray) else ''
+                                output.write(f'\t{ptr_type} {v.name} = reinterpret_cast<{ptr_type}>({v.name}_{name_suffix});\n')
                                 
                         output.write('\n')
                     case _: raise NotImplementedError
@@ -735,7 +733,7 @@ class Function:
                         variable_names.add(instruction.result.name)
                 
                 # Function body
-                current_line = self.line_function_definition + 1
+                current_line = min(self.instructions, key=lambda instruction: instruction.line_number).line_number - 1
                 comment_index = 0
                 while comments[comment_index].line < current_line:
                     comment_index += 1
@@ -838,7 +836,7 @@ def generate_code_one_file(filename: str, targets: set[Target], comments: list[C
                     for var in func.global_vars:
                         global_variables_definition.add(var.to_definition(target))
             
-            output.writelines([s.replace('alignas(64)', 'alignas(64) static') for s in global_variables_definition])
+            output.writelines(['alignas(64) static ' + s for s in global_variables_definition])
         
         if is_header:
             output.write(
@@ -878,13 +876,15 @@ def generate_code(filename_root: str = None, include_tests: bool = True):
     # Group targets on the same file
     c_code_targets: set[Target] = set()
     avx_targets: set[Target] = set()
+    avx2_targets: set[Target] = set()
     avx512_targets: set[Target] = set()
     for func in defined_functions:
         for target in func.targets:
             match target:
                 case Target.PLAIN_C | Target.SSE2: c_code_targets.add(target)
-                case Target.AVX | Target.AVX2:     avx_targets.add(target)
-                case Target.AVX512:                avx512_targets.add(target)
+                case Target.AVX:    avx_targets.add(target)
+                case Target.AVX2:   avx2_targets.add(target)
+                case Target.AVX512: avx512_targets.add(target)
                 case _: raise NotImplementedError   
     
     comments: list[Comment] = get_comments()
@@ -893,9 +893,10 @@ def generate_code(filename_root: str = None, include_tests: bool = True):
         filename_root = get_function_definition_filename().removesuffix('.py')
     
     # Generate code
-    generate_code_one_file(filename_root + ".h", c_code_targets | avx_targets | avx512_targets, comments)
+    generate_code_one_file(filename_root + ".h", c_code_targets | avx_targets | avx2_targets | avx512_targets, comments)
     if len(c_code_targets) > 0: generate_code_one_file(filename_root + ".cpp"       , c_code_targets, comments)
     if len(avx_targets)    > 0: generate_code_one_file(filename_root + "_avx.cpp"   , avx_targets   , comments)
+    if len(avx2_targets)   > 0: generate_code_one_file(filename_root + "_avx2.cpp"  , avx2_targets  , comments)
     if len(avx512_targets) > 0: generate_code_one_file(filename_root + "_avx512.cpp", avx512_targets, comments)
     
     # Generate Google Tests
@@ -925,26 +926,33 @@ if (POLICY CMP0141)
 cmake_policy(SET CMP0141 NEW)
 set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
 endif()
+
 ''')
         cmakelist.write('if(CMAKE_COMPILER_IS_GNUCXX)\n')
-        if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS -mavx2)\n')
+        if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS -mavx)\n')
+        if len(avx2_targets)   > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx2.cpp   PROPERTIES COMPILE_FLAGS -mavx2)\n')
         if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS -mavx512f)\n')
         
         cmakelist.write('elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")\n')
-        if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS "-mavx2 -flto -fomit-frame-pointer -O3 -DNDEBUG")\n')
-        if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS "-mavx512f -flto -fomit-frame-pointer -O3 -DNDEBUG")\n')
+        if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS -mavx)\n')
+        if len(avx2_targets)   > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx2.cpp   PROPERTIES COMPILE_FLAGS -mavx2)\n')
+        if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS -mavx512f)\n')
+        cmakelist.write('\tadd_compile_options(-flto -fomit-frame-pointer -O3 -DNDEBUG)\n')
         
         cmakelist.write('elseif(GLM_USE_INTEL)\n')
         if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS /QxAVX)\n')
+        if len(avx2_targets)   > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx2.cpp   PROPERTIES COMPILE_FLAGS /QxAVX2)\n')
         if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS /QxAVX512F)\n')
         
         cmakelist.write('elseif(MSVC)\n')
         if len(avx_targets)    > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx.cpp    PROPERTIES COMPILE_FLAGS /arch:AVX)\n')
+        if len(avx2_targets)   > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx2.cpp   PROPERTIES COMPILE_FLAGS /arch:AVX2)\n')
         if len(avx512_targets) > 0: cmakelist.write(f'\tset_source_files_properties({Path(filename_root).name}_avx512.cpp PROPERTIES COMPILE_FLAGS /arch:AVX512)\n')
         cmakelist.write('endif()\n\n')
         # Simd library
         cmakelist.write(f'add_library(SIMDLib STATIC "../src/cpuid.cpp" "{Path(filename_root).name}.cpp"{\
             '' if len(avx_targets)    == 0 else f' "{Path(filename_root).name}_avx.cpp"'} {\
+            '' if len(avx2_targets)   == 0 else f' "{Path(filename_root).name}_avx2.cpp"'} {\
             '' if len(avx512_targets) == 0 else f' "{Path(filename_root).name}_avx512.cpp"'})\n')
         cmakelist.write(
 '''
@@ -1384,18 +1392,14 @@ class MemoryArray:
         param_prefix = 'const ' if self.is_const else ''
         
         if self.initial_values:
-            num_elements = max(self.num_elems, len(self.initial_values)) * target_simd_size(target)
-            name_suffix = f'_{target.name.lower()}' if self.is_global else ''
-            result = f'alignas(64) {param_prefix}{get_type(self.c_type, target)} {self.name}{name_suffix}[{num_elements}] = ' + '{'
+            num_elements = max(self.num_elems, len(self.initial_values)) * (target_simd_size(target) if isinstance(self, VectorMemoryArray) else 1)
+            name_suffix = f'{target.name.lower()}' if self.is_global and isinstance(self, VectorMemoryArray) else ''
+            result = f'{param_prefix}{get_type(self.c_type, target)} {self.name}_{name_suffix}[{num_elements}] = ' + '{'
             
             for i, elem in zip(range(len(self.initial_values)), self.initial_values):
-                #if (i & 7) == 0:
                 result += '\n\t'
-                
-                if self.print_as_hex:
-                    result += f'{hex(elem)}, ' *  target_simd_size(target)
-                else:
-                    result += f'{elem}, ' *  target_simd_size(target)
+                repeat = target_simd_size(target) if isinstance(self, VectorMemoryArray) else 1    
+                result += (f'{hex(elem)}, ' if self.print_as_hex else f'{elem}, ') * repeat
                 
             result += '\n};\n'
             return result

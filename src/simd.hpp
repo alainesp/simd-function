@@ -9,6 +9,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#if __cplusplus >= 202002L
+#include <bit>
+#endif
 
 #ifndef SimdScalarType
 #define SimdScalarType uint32_t
@@ -926,6 +929,24 @@ template<class T = SimdScalarType, int shift_amount> static SIMD_INLINE Vec512In
     else if constexpr (sizeof(T) == 8) return _mm512_rol_epi64(a, shift_amount);
 }
 #endif
+
+// Scalar rotation
+static SIMD_INLINE uint8_t  rotl(const uint8_t  a, const int shift_amount) noexcept { return std::rotl(a, shift_amount); }
+static SIMD_INLINE uint16_t rotl(const uint16_t a, const int shift_amount) noexcept { return std::rotl(a, shift_amount); }
+static SIMD_INLINE uint32_t rotl(const uint32_t a, const int shift_amount) noexcept {
+#ifdef _MSC_VER
+    return _rotl(a, shift_amount);
+#else
+    return std::rotl(a, shift_amount);
+#endif
+}
+static SIMD_INLINE uint64_t rotl(const uint64_t a, const int shift_amount) noexcept {
+#ifdef _MSC_VER
+    return _rotl64(a, shift_amount);
+#else
+    return std::rotl(a, shift_amount);
+#endif
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // CPU feature detection

@@ -159,6 +159,7 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 /tests/.vs
+/tests/out
 /bool_optimization/.vs
 /.vscode
 /.vs
@@ -169,6 +170,7 @@ cython_debug/
 /tests/md4.cpp
 /tests/md4.h
 /tests/*_avx.cpp
+/tests/*_avx2.cpp
 /tests/*_avx512.cpp
 /tests/tests_*.cpp
 /tests/reference_implementation.c
