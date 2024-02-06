@@ -922,11 +922,34 @@ template<class T = SimdScalarType> static SIMD_INLINE Vec512Int rotl(const Vec51
 /*else*/ if constexpr (sizeof(T) == 4) return _mm512_rolv_epi32(a, b);
     else if constexpr (sizeof(T) == 8) return _mm512_rolv_epi64(a, b);
 }
+
+// More rotation options
+template<class T = SimdScalarType, int shift_amount> static SIMD_INLINE Vec128Int rotl(const Vec128Int a, const int) noexcept {
+    static_assert(0 <= shift_amount && shift_amount < sizeof(T) * 8, "Invalid shift count");
+
+#if __SSSE3__
+    if constexpr (shift_amount == 56)     return _mm_shuffle_epi8(a, _mm_set_epi64x(0x080f0e0d0c0b0a09ull, 0x0007060504030201ull));//SSSE3
+#endif
+    if constexpr (shift_amount == 1)      return (a >> (sizeof(T) * 8 - shift_amount)) + a + a;
+    else if constexpr (shift_amount == 0) return a;
+    else                                  return (a << shift_amount) | (a >> (sizeof(T) * 8 - shift_amount));
+}
+template<class T = SimdScalarType, int shift_amount> static SIMD_INLINE Vec256Int rotl(const Vec256Int a, const int) noexcept {
+    static_assert(0 <= shift_amount && shift_amount < sizeof(T) * 8, "Invalid shift count");
+
+    if constexpr (shift_amount == 56)     return _mm256_shuffle_epi8(a, _mm256_set_epi64x(0x080f0e0d0c0b0a09ull, 0x0007060504030201ull, 0x080f0e0d0c0b0a09ull, 0x0007060504030201ull));
+    else if constexpr (shift_amount == 1) return (a >> (sizeof(T) * 8 - shift_amount)) + a + a;
+    else if constexpr (shift_amount == 0) return a;
+    else                                  return (a << shift_amount) | (a >> (sizeof(T) * 8 - shift_amount));
+}
 template<class T = SimdScalarType, int shift_amount> static SIMD_INLINE Vec512Int rotl(const Vec512Int a, const int) noexcept {
-    if constexpr (sizeof(T) == 1)      return (a << shift_amount) | (a >> (sizeof(T) * 8 - shift_amount));
-    else if constexpr (sizeof(T) == 2) return (a << shift_amount) | (a >> (sizeof(T) * 8 - shift_amount));
-    else if constexpr (sizeof(T) == 4) return _mm512_rol_epi32(a, shift_amount);
-    else if constexpr (sizeof(T) == 8) return _mm512_rol_epi64(a, shift_amount);
+    static_assert(0 <= shift_amount && shift_amount < sizeof(T) * 8, "Invalid shift count");
+
+    if constexpr (sizeof(T) == 4)         return _mm512_rol_epi32(a, shift_amount);
+    else if constexpr (sizeof(T) == 8)    return _mm512_rol_epi64(a, shift_amount);
+    else if constexpr (shift_amount == 1) return (a >> (sizeof(T) * 8 - shift_amount)) + a + a;
+    else if constexpr (shift_amount == 0) return a;
+    else                                  return (a << shift_amount) | (a >> (sizeof(T) * 8 - shift_amount));
 }
 #endif
 

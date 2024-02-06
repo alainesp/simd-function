@@ -92,12 +92,13 @@ class Target(IntEnum):
     NEON        = 6
 
 default_targets: list[Target] = [Target.PLAIN_C]
-def target_simd_size(target: Target) -> int:
+def target_simd_size(target: Target, scalar_type: ctype) -> int:
     match target:
-        case Target.PLAIN_C: return 1
-        case Target.SSE2 | Target.AVX | Target.NEON: return 4 # TODO: Consider AVX for floats
-        case Target.AVX2  : return  8
-        case Target.AVX512: return 16
+        case Target.PLAIN_C           : return 1
+        case Target.SSE2 | Target.NEON: return 16 // sizeof(scalar_type)
+        case Target.AVX               : return (32 if is_float_type(scalar_type) else 16) // sizeof(scalar_type)
+        case Target.AVX2              : return 32 // sizeof(scalar_type)
+        case Target.AVX512            : return 64 // sizeof(scalar_type)
         case _: raise NotImplementedError
 
 ##################################################################################
@@ -118,24 +119,28 @@ class Instruction:
     def use_value(self, value) -> bool:
         return False
 
+def get_numeric_literal(scalar_type: ctype) -> (str, str):
+    prefix = ''
+    suffix = ')'
+    if scalar_type ==  uint8_t: prefix = 'UINT8_C('
+    if scalar_type ==   int8_t: prefix = 'INT8_C('
+    if scalar_type == uint16_t: prefix = 'UINT16_C('
+    if scalar_type ==  int16_t: prefix = 'INT16_C('
+    if scalar_type == uint32_t: prefix = 'UINT32_C('
+    if scalar_type ==  int32_t: prefix = 'INT32_C('
+    if scalar_type == uint64_t: prefix = 'UINT64_C('
+    if scalar_type ==  int64_t: prefix = 'INT64_C('
+    if scalar_type ==   float: suffix = 'f'
+    
+    return prefix, suffix
+
 def get_expresion(tmp: 'int | float | Variable', target: Target, instruction_by_tmp: dict['Variable', Instruction]) -> str:
     if isinstance(tmp, int) or isinstance(tmp, float):
         return f'{tmp:2}'
     if not tmp.is_tmp():
         return tmp.name
     if tmp.is_constant:
-        prefix = ''
-        suffix = ')'
-        if tmp.c_type ==  uint8_t: prefix = 'UINT8_C('
-        if tmp.c_type ==   int8_t: prefix = 'INT8_C('
-        if tmp.c_type == uint16_t: prefix = 'UINT16_C('
-        if tmp.c_type ==  int16_t: prefix = 'INT16_C('
-        if tmp.c_type == uint32_t: prefix = 'UINT32_C('
-        if tmp.c_type ==  int32_t: prefix = 'INT32_C('
-        if tmp.c_type == uint64_t: prefix = 'UINT64_C('
-        if tmp.c_type ==  int64_t: prefix = 'INT64_C('
-        if tmp.c_type ==   float: suffix = 'f'
-        
+        prefix, suffix = get_numeric_literal(tmp.c_type)
         return f'{prefix}{hex(tmp.constant_value)}{suffix}'
     
     return instruction_by_tmp[tmp].generate_code(target, instruction_by_tmp)
@@ -408,7 +413,7 @@ class RotlInstruction(BinaryInstruction):
         if isinstance(self.operand2, int):
             return f'rotl<{get_type(self.result.c_type, Target.PLAIN_C)}, {self.operand2:2}>'
         else:
-            return 'rotl'
+            return f'rotl<{get_type(self.result.c_type, Target.PLAIN_C)}>'
            
 class RepeatInstruction(Instruction):
     count: int
@@ -540,23 +545,23 @@ class Function:
             
         return result + ')'
     
-    def __convert_rotations_to_shifts(self):
-        for ins in self.instructions:
-            if isinstance(ins, RotlInstruction):
-                i = self.instructions.index(ins)
-                self.instructions.remove(ins)
+    # def __convert_rotations_to_shifts(self):
+    #     for ins in self.instructions:
+    #         if isinstance(ins, RotlInstruction):
+    #             i = self.instructions.index(ins)
+    #             self.instructions.remove(ins)
                 
-                t0 = Vector(ins.result.c_type, is_uninitialize=False)
-                t1 = Vector(ins.result.c_type, is_uninitialize=False)
-                self.instructions.insert(i, ShiftRInstruction(t0, ins.operand1, sizeof(t0.c_type)*8-ins.operand2))
-                if isinstance(ins.operand2, int) and ins.operand2 == 1:
-                    self.instructions.insert(i+1, AddInstruction(t1, ins.operand1, ins.operand1))
-                else:
-                    self.instructions.insert(i+1, ShiftLInstruction(t1, ins.operand1, ins.operand2))
-                self.instructions.insert(i+2, OrInstruction(ins.result, t1, t0))
-                self.instructions[i].line_number = ins.line_number
-                self.instructions[i+1].line_number = ins.line_number
-                self.instructions[i+2].line_number = ins.line_number
+    #             t0 = Vector(ins.result.c_type, is_uninitialize=False)
+    #             t1 = Vector(ins.result.c_type, is_uninitialize=False)
+    #             self.instructions.insert(i, ShiftRInstruction(t0, ins.operand1, sizeof(t0.c_type)*8-ins.operand2))
+    #             if isinstance(ins.operand2, int) and ins.operand2 == 1:
+    #                 self.instructions.insert(i+1, AddInstruction(t1, ins.operand1, ins.operand1))
+    #             else:
+    #                 self.instructions.insert(i+1, ShiftLInstruction(t1, ins.operand1, ins.operand2))
+    #             self.instructions.insert(i+2, OrInstruction(ins.result, t1, t0))
+    #             self.instructions[i].line_number = ins.line_number
+    #             self.instructions[i+1].line_number = ins.line_number
+    #             self.instructions[i+2].line_number = ins.line_number
                 
     def generate_code(self, output, comments: list[Comment], is_header: bool):
         if is_header:
@@ -636,7 +641,7 @@ class Function:
             if target == Target.AVX512:
                 old_instructions = self.instructions_with_rot
             else:
-                self.__convert_rotations_to_shifts()
+                # self.__convert_rotations_to_shifts()
                 old_instructions = self.instructions
             
             for parallel_factor in self.parallelization_factor[target]:
@@ -1102,7 +1107,7 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
                         param_separator = ', '
                     benchmark.write(');\n\t\tnum_calls++;\n\t}\n')
                     benchmark.write(f'\t_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * {\
-                        target_simd_size(target) * parallel_factor}, benchmark::Counter::kIsRate);\n')
+                        target_simd_size(target, func.scalar_type) * parallel_factor}, benchmark::Counter::kIsRate);\n')
                     benchmark.write('}\n')
                     # Register the function as a benchmark
                     benchmark.write(f'BENCHMARK(BM_{func.name}_{target.name}{parallel_suffix});\n\n')
@@ -1409,14 +1414,15 @@ class MemoryArray:
         param_prefix = 'const ' if self.is_const else ''
         
         if self.initial_values:
-            num_elements = max(self.num_elems, len(self.initial_values)) * (target_simd_size(target) if isinstance(self, VectorMemoryArray) else 1)
+            num_elements = max(self.num_elems, len(self.initial_values)) * (target_simd_size(target, self.c_type) if isinstance(self, VectorMemoryArray) else 1)
             name_suffix = f'{target.name.lower()}' if self.is_global and isinstance(self, VectorMemoryArray) else ''
             result = f'{param_prefix}{get_type(self.c_type, target)} {self.name}_{name_suffix}[{num_elements}] = ' + '{'
             
             for i, elem in zip(range(len(self.initial_values)), self.initial_values):
                 result += '\n\t'
-                repeat = target_simd_size(target) if isinstance(self, VectorMemoryArray) else 1    
-                result += (f'{hex(elem)}, ' if self.print_as_hex else f'{elem}, ') * repeat
+                repeat = target_simd_size(target, self.c_type) if isinstance(self, VectorMemoryArray) else 1
+                prefix, suffix = get_numeric_literal(self.c_type)
+                result += (f'{prefix}{hex(elem)}{suffix}, ' if self.print_as_hex else f'{prefix}{elem}{suffix}, ') * repeat
                 
             result += '\n};\n'
             return result
