@@ -931,8 +931,10 @@ template<class T = SimdScalarType, int shift_amount> static SIMD_INLINE Vec512In
 #endif
 
 // Scalar rotation
+#if __cplusplus >= 202002L
 static SIMD_INLINE uint8_t  rotl(const uint8_t  a, const int shift_amount) noexcept { return std::rotl(a, shift_amount); }
 static SIMD_INLINE uint16_t rotl(const uint16_t a, const int shift_amount) noexcept { return std::rotl(a, shift_amount); }
+#endif
 static SIMD_INLINE uint32_t rotl(const uint32_t a, const int shift_amount) noexcept {
 #ifdef _MSC_VER
     return _rotl(a, shift_amount);

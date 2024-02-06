@@ -995,6 +995,15 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
 ''')
     
     with open(path.dirname(filename_root) + f'/tests_{Path(filename_root).name}.cpp', 'w') as tests:
+        # Save comments
+        line = 1
+        for comment in comments:
+            if comment.line == line:
+                tests.write(comment.comment)
+                line += 1
+            else:
+                break
+        tests.write('// Automatically generated code by SIMD-function library\n//\n// Unit Testing\n\n')
         tests.write(f'#include <gtest/gtest.h>\n#include "{Path(filename_root).name}.h"\n#include <wy.hpp>\n#include "reference_implementation.c"\n\n')
         for func in defined_functions:
             for target in func.targets:
@@ -1059,42 +1068,50 @@ target_link_libraries(runBenchmark PRIVATE benchmark::benchmark benchmark::bench
 ''')
         
     with open(path.dirname(filename_root) + f'/benchmark_{Path(filename_root).name}.cpp', 'w') as benchmark:
-            benchmark.write(f'#include <benchmark/benchmark.h>\n#include "{Path(filename_root).name}.h"\n\n')
+        # Save comments
+        line = 1
+        for comment in comments:
+            if comment.line == line:
+                benchmark.write(comment.comment)
+                line += 1
+            else:
+                break
+        benchmark.write('// Automatically generated code by SIMD-function library\n//\n// Micro-benchmark\n\n')
+        benchmark.write(f'#include <benchmark/benchmark.h>\n#include "{Path(filename_root).name}.h"\n\n')
             
-            for func in defined_functions:
-                for target in func.targets:
-                    for parallel_factor in func.parallelization_factor[target]:
-                        parallel_suffix = '' if parallel_factor == 1 and len(func.parallelization_factor[target]) == 1 else f'_x{parallel_factor}'
-                        
-                        benchmark.write(f'static void BM_{func.name}_{target.name}{parallel_suffix}(benchmark::State& _benchmark_state) ')
-                        benchmark.write('{\n')
-                        benchmark.write(f'\tif (!simd::cpu_supports(simd::CpuFeatures::{target.name}))\n\t\t_benchmark_state.SkipWithMessage("No {target.name}");\n\n')
-
-                        # Function params declaration
-                        for arg in func.params:
-                            param_suffix = f'[{arg.num_elems * (parallel_factor if isinstance(arg, VectorMemoryArray) else 1)}]' if isinstance(arg, MemoryArray) else ''
-                            benchmark.write(f'\t{get_type(arg, target)} {arg.name}{param_suffix};\n')
-                        
-                        benchmark.write('\tuint32_t num_calls = 0;\n')
-                        benchmark.write('\tfor (auto _ : _benchmark_state) {\n')
-                        benchmark.write(f'\t\t{func.name}_{target.name.lower()}{parallel_suffix}(')
-                        param_separator: str = ''
-                        for arg in func.params:
-                            benchmark.write(f'{param_separator}{arg.name}')
-                            param_separator = ', '
-                        benchmark.write(');\n\t\tnum_calls++;\n\t}\n')
-                        benchmark.write(f'\t_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * {\
-                            target_simd_size(target) * parallel_factor}, benchmark::Counter::kIsRate);\n')
-                        benchmark.write('}\n')
-                        # Register the function as a benchmark
-                        benchmark.write(f'BENCHMARK(BM_{func.name}_{target.name}{parallel_suffix});\n\n')
+        for func in defined_functions:
+            for target in func.targets:
+                for parallel_factor in func.parallelization_factor[target]:
+                    parallel_suffix = '' if parallel_factor == 1 and len(func.parallelization_factor[target]) == 1 else f'_x{parallel_factor}'
                     
-            benchmark.write(f'\n#define asm_func {Path(filename_root).name}_avx2_asm')
-            benchmark.write(f'\n#define bm_asm_func BM_{Path(filename_root).name}_avx2_asm')
-            benchmark.write('''
+                    benchmark.write(f'static void BM_{func.name}_{target.name}{parallel_suffix}(benchmark::State& _benchmark_state) ')
+                    benchmark.write('{\n')
+                    benchmark.write(f'\tif (!simd::cpu_supports(simd::CpuFeatures::{target.name}))\n\t\t_benchmark_state.SkipWithMessage("No {target.name}");\n\n')
+
+                    # Function params declaration
+                    for arg in func.params:
+                        param_suffix = f'[{arg.num_elems * (parallel_factor if isinstance(arg, VectorMemoryArray) else 1)}]' if isinstance(arg, MemoryArray) else ''
+                        benchmark.write(f'\t{get_type(arg, target)} {arg.name}{param_suffix};\n')
+                    
+                    benchmark.write('\tuint32_t num_calls = 0;\n')
+                    benchmark.write('\tfor (auto _ : _benchmark_state) {\n')
+                    benchmark.write(f'\t\t{func.name}_{target.name.lower()}{parallel_suffix}(')
+                    param_separator: str = ''
+                    for arg in func.params:
+                        benchmark.write(f'{param_separator}{arg.name}')
+                        param_separator = ', '
+                    benchmark.write(');\n\t\tnum_calls++;\n\t}\n')
+                    benchmark.write(f'\t_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * {\
+                        target_simd_size(target) * parallel_factor}, benchmark::Counter::kIsRate);\n')
+                    benchmark.write('}\n')
+                    # Register the function as a benchmark
+                    benchmark.write(f'BENCHMARK(BM_{func.name}_{target.name}{parallel_suffix});\n\n')
+                    
+        benchmark.write(f'\n#define asm_func {Path(filename_root).name}_avx2_asm')
+        benchmark.write('''
 // My code
 extern "C" void asm_func(__m256i state[12], __m256i block[48]);
-static void bm_asm_func(benchmark::State& _benchmark_state) {
+static void BM_asm_func(benchmark::State& _benchmark_state) {
 	__m256i state[12];
 	__m256i block[48];
 	uint32_t num_calls = 0;
@@ -1105,7 +1122,7 @@ static void bm_asm_func(benchmark::State& _benchmark_state) {
 	}
 	_benchmark_state.counters["CallRate"] = benchmark::Counter(num_calls * 8, benchmark::Counter::kIsRate);
 }
-BENCHMARK(bm_asm_func);
+BENCHMARK(BM_asm_func);
 ''')
 
 from subprocess import run
