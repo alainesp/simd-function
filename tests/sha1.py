@@ -119,10 +119,6 @@ with Function(void)(state, W) as sha1_block:
     
 # Define targets
 sha1_block.targets  = [Target.PLAIN_C, Target.SSE2, Target.AVX, Target.AVX2, Target.AVX512]
-sha1_block.parallelization_factor[Target.SSE2  ] = [1]
-sha1_block.parallelization_factor[Target.AVX   ] = [1]
-sha1_block.parallelization_factor[Target.AVX2  ] = [1]
-sha1_block.parallelization_factor[Target.AVX512] = [1, 2]
 # Build and run
 generate_code()
 build_and_run('C:/Program Files/CMake/bin/cmake.exe', run_benchmark=True, run_tests=True, 
